@@ -1,4 +1,4 @@
-package compactor
+package compactor_test
 
 import (
 	"bytes"
@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/davidvella/xp/core/compactor"
 	"github.com/davidvella/xp/core/loser"
 	"github.com/davidvella/xp/core/partition"
 	"github.com/davidvella/xp/core/recordio"
@@ -95,7 +96,7 @@ func TestCompact(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := &bytes.Buffer{}
-			err := Compact(w, tt.args.sequences...)
+			err := compactor.Compact(w, tt.args.sequences...)
 			if tt.wantErr {
 				assert.Error(t, err)
 			}
