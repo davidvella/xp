@@ -52,7 +52,7 @@ func TestStrategy_ShouldRotate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := New(tt.maxMessages)
+			s := NewStrategy(tt.maxMessages)
 			if tt.presetCount > 0 {
 				s.counter[tt.current.GetPartitionKey()] = tt.presetCount
 			}
@@ -63,7 +63,7 @@ func TestStrategy_ShouldRotate(t *testing.T) {
 }
 
 func TestStrategy_ConcurrentAccess(t *testing.T) {
-	s := New(10)
+	s := NewStrategy(10)
 
 	// Test concurrent access to GetPartitionPath and ShouldRotate
 	done := make(chan bool)

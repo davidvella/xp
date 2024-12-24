@@ -10,7 +10,7 @@ type Strategy struct {
 	windowSize time.Duration
 }
 
-func New(windowSize time.Duration) *Strategy {
+func NewStrategy(windowSize time.Duration) *Strategy {
 	return &Strategy{
 		windowSize: windowSize,
 	}

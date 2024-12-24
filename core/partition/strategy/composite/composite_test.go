@@ -82,9 +82,9 @@ func TestPartition_ShouldRotate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			p := NewPartition(tt.partitions...)
+			p := NewStrategy(tt.partitions...)
 			if got := p.ShouldRotate(currentRecord, incomingRecord); got != tt.want {
-				t.Errorf("Partition.ShouldRotate() = %v, want %v", got, tt.want)
+				t.Errorf("Strategy.ShouldRotate() = %v, want %v", got, tt.want)
 			}
 		})
 	}

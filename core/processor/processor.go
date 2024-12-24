@@ -14,25 +14,25 @@ type Processor struct {
 	storage     storage.Storage
 	strategy    partition.Strategy
 	mu          sync.RWMutex
-	activeFiles map[string]*activeFile
+	activeFiles map[string]*activeWriter
 }
 
-type activeFile struct {
+type activeWriter struct {
+	sync.RWMutex
 	writer      *wal.WAL
 	firstRecord partition.Record
-	mu          sync.RWMutex
 }
 
-func (w *activeFile) Write(rec partition.Record) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func (w *activeWriter) Write(rec partition.Record) error {
+	w.Lock()
+	defer w.Unlock()
 
 	return w.writer.Write(rec)
 }
 
-func (w *activeFile) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+func (w *activeWriter) Close() error {
+	w.Lock()
+	defer w.Unlock()
 
 	return w.writer.Close()
 }
@@ -41,7 +41,7 @@ func New(storage storage.Storage, strategy partition.Strategy) *Processor {
 	return &Processor{
 		storage:     storage,
 		strategy:    strategy,
-		activeFiles: make(map[string]*activeFile),
+		activeFiles: make(map[string]*activeWriter),
 	}
 }
 
@@ -57,12 +57,12 @@ func (w *Processor) Handle(ctx context.Context, record partition.Record) error {
 
 	if !exists || shouldRotate {
 		var err error
-		if active, err = w.getActiveFile(ctx, record, partitionKey, shouldRotate); err != nil {
+		if active, err = w.getActiveWriter(ctx, record, partitionKey, shouldRotate); err != nil {
 			return err
 		}
 	}
 
-	// Use the thread-safe Write method of activeFile
+	// Use the thread-safe Write method of activeWriter
 	if err := active.Write(record); err != nil {
 		return fmt.Errorf("failed to write: %w", err)
 	}
@@ -70,7 +70,7 @@ func (w *Processor) Handle(ctx context.Context, record partition.Record) error {
 	return nil
 }
 
-func (w *Processor) getActiveFile(ctx context.Context, record partition.Record, partitionKey string, shouldRotate bool) (*activeFile, error) {
+func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record, partitionKey string, shouldRotate bool) (*activeWriter, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -86,7 +86,7 @@ func (w *Processor) getActiveFile(ctx context.Context, record partition.Record, 
 		return nil, fmt.Errorf("failed to create file: %w", err)
 	}
 
-	active := &activeFile{
+	active := &activeWriter{
 		writer:      wal.NewWAL(writer),
 		firstRecord: record,
 	}

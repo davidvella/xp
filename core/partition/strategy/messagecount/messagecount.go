@@ -12,7 +12,7 @@ type Strategy struct {
 	counter     map[string]int
 }
 
-func New(maxMessages int) *Strategy {
+func NewStrategy(maxMessages int) *Strategy {
 	return &Strategy{
 		MaxMessages: maxMessages,
 		counter:     make(map[string]int),

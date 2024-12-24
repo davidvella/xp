@@ -42,7 +42,7 @@ func TestTimeWindowStrategy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			strategy := New(tt.windowSize)
+			strategy := NewStrategy(tt.windowSize)
 
 			rotate := strategy.ShouldRotate(tt.current, tt.incoming)
 			assert.Equal(t, tt.expectRotate, rotate)
