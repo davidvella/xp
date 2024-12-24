@@ -20,7 +20,7 @@ func TestProcessor_Write(t *testing.T) {
 	}{
 		{
 			name: "successful write to new file",
-			record: partition.Record{
+			record: partition.RecordImpl{
 				PartitionKey: "test",
 				Timestamp:    time.Now(),
 				Data:         []byte("test data"),
@@ -49,7 +49,7 @@ func TestProcessor_Write(t *testing.T) {
 		},
 		{
 			name: "failed to create file",
-			record: partition.Record{
+			record: partition.RecordImpl{
 				PartitionKey: "test",
 				Timestamp:    time.Now(),
 				Data:         []byte("test data"),
@@ -67,7 +67,7 @@ func TestProcessor_Write(t *testing.T) {
 		},
 		{
 			name: "rotation needed and successful",
-			record: partition.Record{
+			record: partition.RecordImpl{
 				PartitionKey: "test",
 				Timestamp:    time.Now(),
 				Data:         []byte("test data"),
@@ -170,7 +170,7 @@ func TestProcessor_Close(t *testing.T) {
 			proc := processor.New(storage, strategy)
 
 			if tt.preWrite {
-				record := partition.Record{
+				record := partition.RecordImpl{
 					PartitionKey: "test",
 					Timestamp:    time.Now(),
 					Data:         []byte("test data"),

@@ -19,9 +19,9 @@ func New(maxMessages int) *Strategy {
 	}
 }
 
-func (s *Strategy) ShouldRotate(first, incoming partition.Record) bool {
+func (s *Strategy) ShouldRotate(first, _ partition.Record) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.counter[first.PartitionKey]++
-	return s.counter[first.PartitionKey] >= s.MaxMessages
+	s.counter[first.GetPartitionKey()]++
+	return s.counter[first.GetPartitionKey()] >= s.MaxMessages
 }

@@ -48,20 +48,20 @@ func TestWAL_Write(t *testing.T) {
 	}{
 		{
 			name:     "successful write",
-			record:   partition.Record{Data: []byte("test data")},
+			record:   partition.RecordImpl{Data: []byte("test data")},
 			writeErr: nil,
 			wantErr:  false,
 		},
 		{
 			name:       "write error",
-			record:     partition.Record{Data: []byte("test data")},
+			record:     partition.RecordImpl{Data: []byte("test data")},
 			writeErr:   errors.New("write failed"),
 			wantErr:    true,
 			wantErrMsg: "failed to write record: error writing: write failed",
 		},
 		{
 			name:     "empty record",
-			record:   partition.Record{Data: []byte{}},
+			record:   partition.RecordImpl{Data: []byte{}},
 			writeErr: nil,
 			wantErr:  false,
 		},
@@ -133,7 +133,7 @@ func TestWAL_Concurrent(t *testing.T) {
 
 	var records = make([]partition.Record, 0, numGoroutines)
 	for i := range numGoroutines {
-		records = append(records, partition.Record{Data: []byte{byte(i)}, Timestamp: time.Now()})
+		records = append(records, partition.RecordImpl{Data: []byte{byte(i)}, Timestamp: time.Now()})
 	}
 
 	for i := 0; i < numGoroutines; i++ {

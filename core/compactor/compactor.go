@@ -14,7 +14,7 @@ var (
 	maxPossibleString = "\U0010FFFF"
 	// The max time that can be represented
 	maxTime   = time.Date(292277026596, 12, 4, 15, 30, 7, 999999999, time.UTC)
-	maxRecord = partition.Record{
+	maxRecord = partition.RecordImpl{
 		ID:           maxPossibleString,
 		PartitionKey: maxPossibleString,
 		// The max time that can be represented
@@ -29,18 +29,21 @@ func Compact(w io.Writer, sequences ...loser.Sequence[partition.Record]) error {
 	}
 
 	var (
-		lt   = loser.New(sequences, maxRecord)
+		lt   = loser.New[partition.Record](sequences, maxRecord)
 		last partition.Record
 		done bool
 	)
 
 	for current := range lt.All() {
+		if current == nil {
+			continue
+		}
 		if !done {
 			last = current
 			done = true
 			continue
 		}
-		if current.ID != last.ID {
+		if last != nil && current.GetID() != last.GetID() {
 			err := recordio.Write(w, last)
 			if err != nil {
 				return err

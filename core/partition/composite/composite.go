@@ -8,7 +8,7 @@ type Partition struct {
 	partitions []partition.Strategy
 }
 
-func NewPartition(partitions []partition.Strategy) *Partition {
+func NewPartition(partitions ...partition.Strategy) *Partition {
 	return &Partition{partitions: partitions}
 }
 

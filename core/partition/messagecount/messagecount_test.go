@@ -19,32 +19,32 @@ func TestStrategy_ShouldRotate(t *testing.T) {
 		{
 			name:        "under max messages returns false",
 			maxMessages: 10,
-			current:     partition.Record{PartitionKey: "key1"},
-			incoming:    partition.Record{PartitionKey: "key1"},
+			current:     partition.RecordImpl{PartitionKey: "key1"},
+			incoming:    partition.RecordImpl{PartitionKey: "key1"},
 			presetCount: 5,
 			want:        false,
 		},
 		{
 			name:        "at max messages returns true",
 			maxMessages: 10,
-			current:     partition.Record{PartitionKey: "key1"},
-			incoming:    partition.Record{PartitionKey: "key1"},
+			current:     partition.RecordImpl{PartitionKey: "key1"},
+			incoming:    partition.RecordImpl{PartitionKey: "key1"},
 			presetCount: 9,
 			want:        true,
 		},
 		{
 			name:        "over max messages returns true",
 			maxMessages: 10,
-			current:     partition.Record{PartitionKey: "key1"},
-			incoming:    partition.Record{PartitionKey: "key1"},
+			current:     partition.RecordImpl{PartitionKey: "key1"},
+			incoming:    partition.RecordImpl{PartitionKey: "key1"},
 			presetCount: 15,
 			want:        true,
 		},
 		{
 			name:        "different keys tracked separately",
 			maxMessages: 10,
-			current:     partition.Record{PartitionKey: "key1"},
-			incoming:    partition.Record{PartitionKey: "key2"},
+			current:     partition.RecordImpl{PartitionKey: "key1"},
+			incoming:    partition.RecordImpl{PartitionKey: "key2"},
 			presetCount: 9,
 			want:        true,
 		},
@@ -54,7 +54,7 @@ func TestStrategy_ShouldRotate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s := New(tt.maxMessages)
 			if tt.presetCount > 0 {
-				s.counter[tt.current.PartitionKey] = tt.presetCount
+				s.counter[tt.current.GetPartitionKey()] = tt.presetCount
 			}
 			got := s.ShouldRotate(tt.current, tt.incoming)
 			assert.Equal(t, tt.want, got)
@@ -70,14 +70,13 @@ func TestStrategy_ConcurrentAccess(t *testing.T) {
 
 	go func() {
 		for i := 0; i < 100; i++ {
-			current := partition.Record{PartitionKey: "key1"}
-			incoming := partition.Record{PartitionKey: "key1"}
+			current := partition.RecordImpl{PartitionKey: "key1"}
+			incoming := partition.RecordImpl{PartitionKey: "key1"}
 			s.ShouldRotate(current, incoming)
 		}
 		done <- true
 	}()
 
 	// Wait for both goroutines to complete
-	<-done
 	<-done
 }

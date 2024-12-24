@@ -36,7 +36,7 @@ func TestCompact(t *testing.T) {
 	tests := []struct {
 		name        string
 		args        args
-		wantRecords []partition.Record
+		wantRecords []partition.RecordImpl
 		wantErr     bool
 	}{
 		{
@@ -44,20 +44,20 @@ func TestCompact(t *testing.T) {
 			args: args{
 				[]loser.Sequence[partition.Record]{
 					NewList[partition.Record](
-						partition.Record{
+						partition.RecordImpl{
 							ID:           "123",
 							PartitionKey: "",
 							Timestamp:    time.Date(2024, 1, 1, 0, 0, 1, 0, time.UTC),
 							Data:         []byte{},
 						},
-						partition.Record{
+						partition.RecordImpl{
 							ID:           "124",
 							PartitionKey: "",
 							Timestamp:    time.Date(2024, 1, 1, 0, 0, 0, 2, time.UTC),
 							Data:         []byte{},
 						}),
 					NewList[partition.Record](
-						partition.Record{
+						partition.RecordImpl{
 							ID:           "123",
 							PartitionKey: "",
 							Timestamp:    time.Date(2024, 1, 1, 0, 0, 2, 0, time.UTC),
@@ -65,7 +65,7 @@ func TestCompact(t *testing.T) {
 						}),
 				},
 			},
-			wantRecords: []partition.Record{
+			wantRecords: []partition.RecordImpl{
 				{
 					ID:           "123",
 					PartitionKey: "",
@@ -88,7 +88,7 @@ func TestCompact(t *testing.T) {
 					NewList[partition.Record](),
 				},
 			},
-			wantRecords: []partition.Record{},
+			wantRecords: []partition.RecordImpl{},
 			wantErr:     false,
 		},
 	}

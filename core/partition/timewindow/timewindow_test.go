@@ -19,10 +19,10 @@ func TestTimeWindowStrategy(t *testing.T) {
 		{
 			name:       "same window - no rotation",
 			windowSize: 5 * time.Minute,
-			current: partition.Record{
+			current: partition.RecordImpl{
 				Timestamp: time.Unix(1000, 0),
 			},
-			incoming: partition.Record{
+			incoming: partition.RecordImpl{
 				Timestamp: time.Unix(1001, 0),
 			},
 			expectRotate: false,
@@ -30,10 +30,10 @@ func TestTimeWindowStrategy(t *testing.T) {
 		{
 			name:       "different window - should rotate",
 			windowSize: 5 * time.Minute,
-			current: partition.Record{
+			current: partition.RecordImpl{
 				Timestamp: time.Unix(1000, 0),
 			},
-			incoming: partition.Record{
+			incoming: partition.RecordImpl{
 				Timestamp: time.Unix(1301, 0),
 			},
 			expectRotate: true,

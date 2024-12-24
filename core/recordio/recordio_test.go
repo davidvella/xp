@@ -17,7 +17,7 @@ func TestWrite(t *testing.T) {
 	}{
 		{
 			name: "successful write",
-			record: partition.Record{
+			record: partition.RecordImpl{
 				Data:      []byte("test data"),
 				Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
@@ -25,7 +25,7 @@ func TestWrite(t *testing.T) {
 		},
 		{
 			name: "empty data write",
-			record: partition.Record{
+			record: partition.RecordImpl{
 				Data:      []byte{},
 				Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
@@ -50,8 +50,8 @@ func TestWrite(t *testing.T) {
 			assert.Len(t, records, 1)
 
 			// Compare the original and read record
-			assert.Equal(t, tt.record.Data, records[0].Data)
-			assert.Equal(t, tt.record.Timestamp, records[0].Timestamp)
+			assert.Equal(t, tt.record.GetData(), records[0].GetData())
+			assert.Equal(t, tt.record.GetTimestamp(), records[0].GetTimestamp())
 		})
 	}
 }
@@ -60,13 +60,13 @@ func TestReadRecords(t *testing.T) {
 	tests := []struct {
 		name  string
 		input func() *bytes.Buffer
-		want  []partition.Record
+		want  []partition.RecordImpl
 	}{
 		{
 			name: "read single record",
 			input: func() *bytes.Buffer {
 				buf := new(bytes.Buffer)
-				record := partition.Record{
+				record := partition.RecordImpl{
 					Data:      []byte("test data"),
 					Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 				}
@@ -74,7 +74,7 @@ func TestReadRecords(t *testing.T) {
 				assert.NoError(t, err)
 				return buf
 			},
-			want: []partition.Record{
+			want: []partition.RecordImpl{
 				{
 					Data:      []byte("test data"),
 					Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -85,7 +85,7 @@ func TestReadRecords(t *testing.T) {
 			name: "read multiple records",
 			input: func() *bytes.Buffer {
 				buf := new(bytes.Buffer)
-				records := []partition.Record{
+				records := []partition.RecordImpl{
 					{
 						Data:      []byte("first"),
 						Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -101,7 +101,7 @@ func TestReadRecords(t *testing.T) {
 				}
 				return buf
 			},
-			want: []partition.Record{
+			want: []partition.RecordImpl{
 				{
 					Data:      []byte("first"),
 					Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
@@ -117,7 +117,7 @@ func TestReadRecords(t *testing.T) {
 			input: func() *bytes.Buffer {
 				return new(bytes.Buffer)
 			},
-			want: []partition.Record{},
+			want: []partition.RecordImpl{},
 		},
 	}
 
@@ -128,8 +128,8 @@ func TestReadRecords(t *testing.T) {
 			assert.Len(t, got, len(tt.want))
 
 			for i := range got {
-				assert.Equal(t, tt.want[i].Data, got[i].Data)
-				assert.Equal(t, tt.want[i].Timestamp.UnixNano(), got[i].Timestamp.UnixNano())
+				assert.Equal(t, tt.want[i].Data, got[i].GetData())
+				assert.Equal(t, tt.want[i].Timestamp.UnixNano(), got[i].GetTimestamp().UnixNano())
 			}
 		})
 	}

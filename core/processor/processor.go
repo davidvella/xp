@@ -49,7 +49,7 @@ func New(storage storage.Storage, strategy partition.Strategy) *Processor {
 func (w *Processor) Handle(ctx context.Context, record partition.Record) error {
 	w.mu.RLock()
 
-	partitionKey := record.PartitionKey
+	partitionKey := record.GetPartitionKey()
 	active, exists := w.activeFiles[partitionKey]
 	shouldRotate := exists && w.strategy.ShouldRotate(active.firstRecord, record)
 
@@ -80,7 +80,7 @@ func (w *Processor) getActiveFile(ctx context.Context, record partition.Record, 
 		}
 	}
 
-	filename := fmt.Sprintf("%s_%d.dat", partitionKey, record.Timestamp.Unix())
+	filename := fmt.Sprintf("%s_%d.dat", partitionKey, record.GetTimestamp().Unix())
 	writer, err := w.storage.Create(ctx, filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create file: %w", err)
