@@ -57,7 +57,7 @@ func TestWAL_Write(t *testing.T) {
 			record:     partition.Record{Data: []byte("test data")},
 			writeErr:   errors.New("write failed"),
 			wantErr:    true,
-			wantErrMsg: "failed to write record: write failed",
+			wantErrMsg: "failed to write record: error writing: write failed",
 		},
 		{
 			name:     "empty record",
@@ -146,11 +146,10 @@ func TestWAL_Concurrent(t *testing.T) {
 
 	wg.Wait()
 
-	assert.Equal(t, numGoroutines*14, len(mock.written))
+	assert.Equal(t, numGoroutines*31, len(mock.written))
 
 	r := bytes.NewReader(mock.written)
-	got, err := recordio.ReadRecords(r)
+	got := recordio.ReadRecords(r)
 
-	assert.NoError(t, err)
 	assert.Len(t, got, numGoroutines)
 }

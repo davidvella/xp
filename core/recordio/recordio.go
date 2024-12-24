@@ -12,27 +12,27 @@ import (
 
 // Write writes a single record to the writer
 func Write(w io.Writer, data partition.Record) error {
-	// Write ID length and ID
+	// Handle ID length and ID
 	if err := writeString(w, data.ID); err != nil {
 		return err
 	}
 
-	// Write PartitionKey length and PartitionKey
+	// Handle PartitionKey length and PartitionKey
 	if err := writeString(w, data.PartitionKey); err != nil {
 		return err
 	}
 
-	// Write timestamp (8 bytes)
+	// Handle timestamp (8 bytes)
 	if err := binary.Write(w, binary.LittleEndian, data.Timestamp.UnixNano()); err != nil {
 		return fmt.Errorf("error writing timestamp: %v", err)
 	}
 
-	// Write timezone name
+	// Handle timezone name
 	if err := writeString(w, data.Timestamp.Location().String()); err != nil {
 		return fmt.Errorf("error writing timezone: %v", err)
 	}
 
-	// Write data length and data
+	// Handle data length and data
 	if err := binary.Write(w, binary.LittleEndian, uint32(len(data.Data))); err != nil {
 		return fmt.Errorf("error writing data length: %v", err)
 	}
@@ -40,7 +40,7 @@ func Write(w io.Writer, data partition.Record) error {
 		return fmt.Errorf("error writing data: %v", err)
 	}
 
-	// Write new line (1 byte)
+	// Handle new line (1 byte)
 	if _, err := w.Write([]byte{'\n'}); err != nil {
 		return fmt.Errorf("error writing newline: %v", err)
 	}

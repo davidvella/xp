@@ -70,7 +70,8 @@ func TestReadRecords(t *testing.T) {
 					Data:      []byte("test data"),
 					Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 				}
-				Write(buf, record)
+				err := Write(buf, record)
+				assert.NoError(t, err)
 				return buf
 			},
 			want: []partition.Record{
@@ -95,7 +96,8 @@ func TestReadRecords(t *testing.T) {
 					},
 				}
 				for _, r := range records {
-					Write(buf, r)
+					err := Write(buf, r)
+					assert.NoError(t, err)
 				}
 				return buf
 			},

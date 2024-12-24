@@ -15,7 +15,6 @@ import (
 
 type List[E loser.Lesser[E]] struct {
 	list []E
-	cur  E
 }
 
 func NewList[E loser.Lesser[E]](list ...E) *List[E] {
