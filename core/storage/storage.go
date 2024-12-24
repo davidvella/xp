@@ -2,29 +2,15 @@ package storage
 
 import (
 	"context"
-	"time"
-
-	"github.com/davidvella/xp/core/types"
+	"io"
 )
 
-// WindowState represents the state of a window
-type WindowState[K types.GroupKey, T any] struct {
-	WindowStart time.Time
-	WindowEnd   time.Time
-	Groups      map[K][]types.Record[T]
-}
-
-// Storage defines the interface for persistent storage
-type Storage[K types.GroupKey, T any] interface {
-	// SaveWindow persists a window state
-	SaveWindow(ctx context.Context, state WindowState[K, T]) error
-
-	// LoadWindow retrieves a window state
-	LoadWindow(ctx context.Context, windowStart time.Time) (WindowState[K, T], error)
-
-	// DeleteWindow removes a window state
-	DeleteWindow(ctx context.Context, windowStart time.Time) error
-
-	// ListWindows returns all window start times within a range
-	ListWindows(ctx context.Context, start, end time.Time) ([]time.Time, error)
+// Storage defines the interface for the underlying storage system
+type Storage interface {
+	// Create a new file/object for writing
+	Create(ctx context.Context, path string) (io.WriteCloser, error)
+	// Publish a file/object from pending to publishing
+	Publish(ctx context.Context, path string) error
+	// List files/objects from pending
+	List(ctx context.Context) ([]string, error)
 }
