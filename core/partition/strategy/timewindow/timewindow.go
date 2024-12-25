@@ -17,7 +17,7 @@ func NewStrategy(windowSize time.Duration) *Strategy {
 }
 
 func (s *Strategy) ShouldRotate(first, incoming partition.Record) bool {
-	currentWindow := first.GetTimestamp().Unix() / int64(s.windowSize.Seconds())
-	incomingWindow := incoming.GetTimestamp().Unix() / int64(s.windowSize.Seconds())
+	currentWindow := first.GetWatermark().Unix() / int64(s.windowSize.Seconds())
+	incomingWindow := incoming.GetWatermark().Unix() / int64(s.windowSize.Seconds())
 	return currentWindow != incomingWindow
 }

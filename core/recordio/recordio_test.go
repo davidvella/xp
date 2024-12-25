@@ -51,7 +51,7 @@ func TestWrite(t *testing.T) {
 
 			// Compare the original and read record
 			assert.Equal(t, tt.record.GetData(), records[0].GetData())
-			assert.Equal(t, tt.record.GetTimestamp(), records[0].GetTimestamp())
+			assert.Equal(t, tt.record.GetWatermark(), records[0].GetWatermark())
 		})
 	}
 }
@@ -129,7 +129,7 @@ func TestReadRecords(t *testing.T) {
 
 			for i := range got {
 				assert.Equal(t, tt.want[i].Data, got[i].GetData())
-				assert.Equal(t, tt.want[i].Timestamp.UnixNano(), got[i].GetTimestamp().UnixNano())
+				assert.Equal(t, tt.want[i].Timestamp.UnixNano(), got[i].GetWatermark().UnixNano())
 			}
 		})
 	}

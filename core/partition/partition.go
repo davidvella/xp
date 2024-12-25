@@ -20,7 +20,7 @@ func (r RecordImpl) GetPartitionKey() string {
 	return r.PartitionKey
 }
 
-func (r RecordImpl) GetTimestamp() time.Time {
+func (r RecordImpl) GetWatermark() time.Time {
 	return r.Timestamp
 }
 
@@ -37,7 +37,7 @@ func (r RecordImpl) Less(t Record) bool {
 		return true
 	}
 
-	if c := r.Timestamp.Compare(t.GetTimestamp()); c < 0 {
+	if c := r.Timestamp.Compare(t.GetWatermark()); c < 0 {
 		return true
 	}
 
@@ -48,7 +48,7 @@ type Record interface {
 	Less(t Record) bool
 	GetID() string
 	GetPartitionKey() string
-	GetTimestamp() time.Time
+	GetWatermark() time.Time
 	GetData() []byte
 }
 

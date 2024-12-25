@@ -23,12 +23,12 @@ func Write(w io.Writer, data partition.Record) error {
 	}
 
 	// Handle timestamp (8 bytes)
-	if err := binary.Write(w, binary.LittleEndian, data.GetTimestamp().UnixNano()); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, data.GetWatermark().UnixNano()); err != nil {
 		return fmt.Errorf("error writing timestamp: %v", err)
 	}
 
 	// Handle timezone name
-	if err := writeString(w, data.GetTimestamp().Location().String()); err != nil {
+	if err := writeString(w, data.GetWatermark().Location().String()); err != nil {
 		return fmt.Errorf("error writing timezone: %v", err)
 	}
 
