@@ -53,5 +53,11 @@ type Record interface {
 }
 
 type Strategy interface {
-	ShouldRotate(first, incoming Record) bool
+	ShouldRotate(information Information, watermark time.Time) bool
+}
+
+type Information struct {
+	PartitionKey   string
+	RecordCount    int
+	FirstWatermark time.Time
 }

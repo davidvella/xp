@@ -16,8 +16,6 @@ func NewStrategy(windowSize time.Duration) *Strategy {
 	}
 }
 
-func (s *Strategy) ShouldRotate(first, incoming partition.Record) bool {
-	currentWindow := first.GetWatermark().Unix() / int64(s.windowSize.Seconds())
-	incomingWindow := incoming.GetWatermark().Unix() / int64(s.windowSize.Seconds())
-	return currentWindow != incomingWindow
+func (s *Strategy) ShouldRotate(information partition.Information, watermark time.Time) bool {
+	return watermark.Sub(information.FirstWatermark) > s.windowSize
 }

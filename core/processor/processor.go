@@ -21,7 +21,7 @@ type Processor struct {
 type activeWriter struct {
 	mu            *sync.RWMutex
 	writer        *wal.WAL
-	firstRecord   partition.Record
+	information   partition.Information
 	lastWatermark time.Time
 }
 
@@ -34,6 +34,7 @@ func (w *activeWriter) Write(rec partition.Record) error {
 	}
 
 	w.lastWatermark = rec.GetWatermark()
+	w.information.RecordCount++
 
 	return nil
 }
@@ -58,7 +59,7 @@ func (w *Processor) Handle(ctx context.Context, record partition.Record) error {
 
 	partitionKey := record.GetPartitionKey()
 	active, exists := w.activeFiles.Get(partitionKey)
-	shouldRotate := exists && w.strategy.ShouldRotate(active.firstRecord, record)
+	shouldRotate := exists && w.strategy.ShouldRotate(active.information, record.GetWatermark())
 
 	w.mu.RUnlock()
 
@@ -127,8 +128,12 @@ func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record
 	}
 
 	active := activeWriter{
-		writer:        wal.NewWAL(writer),
-		firstRecord:   record,
+		writer: wal.NewWAL(writer),
+		information: partition.Information{
+			PartitionKey:   record.GetPartitionKey(),
+			RecordCount:    0,
+			FirstWatermark: record.GetWatermark(),
+		},
 		lastWatermark: record.GetWatermark(),
 		mu:            &sync.RWMutex{},
 	}

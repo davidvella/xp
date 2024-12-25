@@ -2,6 +2,7 @@ package messagecount
 
 import (
 	"testing"
+	"time"
 
 	"github.com/davidvella/xp/core/partition"
 	"github.com/stretchr/testify/assert"
@@ -10,73 +11,52 @@ import (
 func TestStrategy_ShouldRotate(t *testing.T) {
 	tests := []struct {
 		name        string
-		maxMessages int
-		current     partition.Record
-		incoming    partition.Record
-		presetCount int
+		strategy    *Strategy
+		information partition.Information
+		currentTime time.Time
 		want        bool
 	}{
 		{
-			name:        "under max messages returns false",
-			maxMessages: 10,
-			current:     partition.RecordImpl{PartitionKey: "key1"},
-			incoming:    partition.RecordImpl{PartitionKey: "key1"},
-			presetCount: 5,
+			name:        "should rotate when record count equals max messages",
+			strategy:    NewStrategy(100),
+			information: partition.Information{RecordCount: 100},
+			currentTime: time.Now(),
+			want:        true,
+		},
+		{
+			name:        "should rotate when record count exceeds max messages",
+			strategy:    NewStrategy(100),
+			information: partition.Information{RecordCount: 150},
+			currentTime: time.Now(),
+			want:        true,
+		},
+		{
+			name:        "should not rotate when record count below max messages",
+			strategy:    NewStrategy(100),
+			information: partition.Information{RecordCount: 50},
+			currentTime: time.Now(),
 			want:        false,
 		},
 		{
-			name:        "at max messages returns true",
-			maxMessages: 10,
-			current:     partition.RecordImpl{PartitionKey: "key1"},
-			incoming:    partition.RecordImpl{PartitionKey: "key1"},
-			presetCount: 9,
-			want:        true,
+			name:        "should not rotate with zero records",
+			strategy:    NewStrategy(100),
+			information: partition.Information{RecordCount: 0},
+			currentTime: time.Now(),
+			want:        false,
 		},
 		{
-			name:        "over max messages returns true",
-			maxMessages: 10,
-			current:     partition.RecordImpl{PartitionKey: "key1"},
-			incoming:    partition.RecordImpl{PartitionKey: "key1"},
-			presetCount: 15,
-			want:        true,
-		},
-		{
-			name:        "different keys tracked separately",
-			maxMessages: 10,
-			current:     partition.RecordImpl{PartitionKey: "key1"},
-			incoming:    partition.RecordImpl{PartitionKey: "key2"},
-			presetCount: 9,
+			name:        "should handle zero max messages",
+			strategy:    NewStrategy(0),
+			information: partition.Information{RecordCount: 1},
+			currentTime: time.Now(),
 			want:        true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := NewStrategy(tt.maxMessages)
-			if tt.presetCount > 0 {
-				s.counter[tt.current.GetPartitionKey()] = tt.presetCount
-			}
-			got := s.ShouldRotate(tt.current, tt.incoming)
+			got := tt.strategy.ShouldRotate(tt.information, tt.currentTime)
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func TestStrategy_ConcurrentAccess(t *testing.T) {
-	s := NewStrategy(10)
-
-	// Test concurrent access to GetPartitionPath and ShouldRotate
-	done := make(chan bool)
-
-	go func() {
-		for i := 0; i < 100; i++ {
-			current := partition.RecordImpl{PartitionKey: "key1"}
-			incoming := partition.RecordImpl{PartitionKey: "key1"}
-			s.ShouldRotate(current, incoming)
-		}
-		done <- true
-	}()
-
-	// Wait for both goroutines to complete
-	<-done
 }

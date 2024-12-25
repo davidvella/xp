@@ -12,30 +12,26 @@ func TestTimeWindowStrategy(t *testing.T) {
 	tests := []struct {
 		name         string
 		windowSize   time.Duration
-		current      partition.Record
-		incoming     partition.Record
+		current      partition.Information
+		incoming     time.Time
 		expectRotate bool
 	}{
 		{
 			name:       "same window - no rotation",
 			windowSize: 5 * time.Minute,
-			current: partition.RecordImpl{
-				Timestamp: time.Unix(1000, 0),
+			current: partition.Information{
+				FirstWatermark: time.Unix(1000, 0),
 			},
-			incoming: partition.RecordImpl{
-				Timestamp: time.Unix(1001, 0),
-			},
+			incoming:     time.Unix(1001, 0),
 			expectRotate: false,
 		},
 		{
 			name:       "different window - should rotate",
 			windowSize: 5 * time.Minute,
-			current: partition.RecordImpl{
-				Timestamp: time.Unix(1000, 0),
+			current: partition.Information{
+				FirstWatermark: time.Unix(1000, 0),
 			},
-			incoming: partition.RecordImpl{
-				Timestamp: time.Unix(1301, 0),
-			},
+			incoming:     time.Unix(1301, 0),
 			expectRotate: true,
 		},
 	}

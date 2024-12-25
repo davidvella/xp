@@ -1,6 +1,10 @@
 package composite
 
-import "github.com/davidvella/xp/core/partition"
+import (
+	"time"
+
+	"github.com/davidvella/xp/core/partition"
+)
 
 var _ partition.Strategy = &Strategy{}
 
@@ -12,9 +16,9 @@ func NewStrategy(partitions ...partition.Strategy) *Strategy {
 	return &Strategy{partitions: partitions}
 }
 
-func (c *Strategy) ShouldRotate(current, incoming partition.Record) bool {
+func (c *Strategy) ShouldRotate(information partition.Information, t time.Time) bool {
 	for _, p := range c.partitions {
-		if rotate := p.ShouldRotate(current, incoming); rotate {
+		if rotate := p.ShouldRotate(information, t); rotate {
 			return rotate
 		}
 	}

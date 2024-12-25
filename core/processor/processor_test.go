@@ -39,7 +39,7 @@ func TestProcessor_Write(t *testing.T) {
 				}
 
 				strategy := &MockStrategy{
-					shouldRotateFunc: func(first, current partition.Record) bool {
+					shouldRotateFunc: func(_ partition.Information, _ time.Time) bool {
 						return false
 					},
 				}
@@ -92,7 +92,7 @@ func TestProcessor_Write(t *testing.T) {
 				}
 
 				strategy := &MockStrategy{
-					shouldRotateFunc: func(first, current partition.Record) bool {
+					shouldRotateFunc: func(_ partition.Information, _ time.Time) bool {
 						return true
 					},
 				}
@@ -159,7 +159,7 @@ func TestProcessor_WriteRecords(t *testing.T) {
 				}
 
 				strategy := &MockStrategy{
-					shouldRotateFunc: func(first, current partition.Record) bool {
+					shouldRotateFunc: func(_ partition.Information, _ time.Time) bool {
 						return false
 					},
 				}
@@ -348,12 +348,12 @@ func (m *MockStorage) List(ctx context.Context) ([]string, error) {
 
 // MockStrategy implements partition.Strategy interface
 type MockStrategy struct {
-	shouldRotateFunc func(first, current partition.Record) bool
+	shouldRotateFunc func(information partition.Information, watermark time.Time) bool
 }
 
-func (m *MockStrategy) ShouldRotate(first, current partition.Record) bool {
+func (m *MockStrategy) ShouldRotate(information partition.Information, watermark time.Time) bool {
 	if m.shouldRotateFunc != nil {
-		return m.shouldRotateFunc(first, current)
+		return m.shouldRotateFunc(information, watermark)
 	}
 	return false
 }

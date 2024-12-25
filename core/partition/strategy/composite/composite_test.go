@@ -2,6 +2,7 @@ package composite
 
 import (
 	"testing"
+	"time"
 
 	"github.com/davidvella/xp/core/partition"
 )
@@ -11,14 +12,12 @@ type MockStrategy struct {
 	shouldRotate bool
 }
 
-func (m MockStrategy) ShouldRotate(current, incoming partition.Record) bool {
+func (m MockStrategy) ShouldRotate(_ partition.Information, _ time.Time) bool {
 	return m.shouldRotate
 }
 
 func TestPartition_ShouldRotate(t *testing.T) {
-	// Mock records for testing
-	currentRecord := partition.RecordImpl{}
-	incomingRecord := partition.RecordImpl{}
+	info := partition.Information{}
 
 	tests := []struct {
 		name       string
@@ -83,7 +82,7 @@ func TestPartition_ShouldRotate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewStrategy(tt.partitions...)
-			if got := p.ShouldRotate(currentRecord, incomingRecord); got != tt.want {
+			if got := p.ShouldRotate(info, time.Now()); got != tt.want {
 				t.Errorf("Strategy.ShouldRotate() = %v, want %v", got, tt.want)
 			}
 		})
