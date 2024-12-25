@@ -9,6 +9,7 @@ import (
 
 	"github.com/davidvella/xp/core/partition"
 	"github.com/davidvella/xp/core/processor"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestProcessor_Write(t *testing.T) {
@@ -125,6 +126,7 @@ func TestProcessor_Write(t *testing.T) {
 func TestProcessor_WriteRecords(t *testing.T) {
 	t1 := time.Date(2024, 1, 1, 0, 0, 1, 0, time.UTC)
 	t2 := time.Date(2024, 1, 1, 0, 1, 1, 0, time.UTC)
+	t3 := time.Date(2024, 1, 1, 0, 2, 1, 0, time.UTC)
 	tests := []struct {
 		name          string
 		records       []partition.Record
@@ -132,7 +134,7 @@ func TestProcessor_WriteRecords(t *testing.T) {
 		expectedError error
 	}{
 		{
-			name: "successful write to new file",
+			name: "successful write to file and publish",
 			records: []partition.Record{
 				partition.RecordImpl{
 					PartitionKey: "test",
@@ -144,23 +146,35 @@ func TestProcessor_WriteRecords(t *testing.T) {
 					Timestamp:    t2,
 					Data:         []byte("test data"),
 				},
+				partition.RecordImpl{
+					PartitionKey: "test",
+					Timestamp:    t3,
+					Data:         []byte("test data"),
+				},
 			},
 			setupMocks: func() (*MockStorage, *MockStrategy) {
 				writer := &MockWriteCloser{
 					writeFunc: func(p []byte) (int, error) {
 						return len(p), nil
 					},
+					closeFunc: func() error {
+						return nil
+					},
 				}
 
 				storage := &MockStorage{
-					createFunc: func(ctx context.Context, path string) (io.WriteCloser, error) {
+					createFunc: func(_ context.Context, _ string) (io.WriteCloser, error) {
 						return writer, nil
+					},
+					publishFunc: func(_ context.Context, path string) error {
+						assert.Equal(t, "test_1704067201.dat", path)
+						return nil
 					},
 				}
 
 				strategy := &MockStrategy{
-					shouldRotateFunc: func(_ partition.Information, _ time.Time) bool {
-						return false
+					shouldRotateFunc: func(_ partition.Information, t time.Time) bool {
+						return t == t3
 					},
 				}
 

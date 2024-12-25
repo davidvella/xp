@@ -22,6 +22,7 @@ type activeWriter struct {
 	mu            *sync.RWMutex
 	writer        *wal.WAL
 	information   partition.Information
+	path          string
 	lastWatermark time.Time
 }
 
@@ -50,7 +51,7 @@ func New(storage storage.Storage, strategy partition.Strategy) *Processor {
 	return &Processor{
 		storage:     storage,
 		strategy:    strategy,
-		activeFiles: NewPriorityQueue[string, activeWriter](comp),
+		activeFiles: NewPriorityQueue[string, activeWriter](orderByWatermark),
 	}
 }
 
@@ -136,14 +137,16 @@ func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record
 		},
 		lastWatermark: record.GetWatermark(),
 		mu:            &sync.RWMutex{},
+		path:          filename,
 	}
+	
 	w.activeFiles.Set(partitionKey, active)
 
 	return active, nil
 }
 
-func (w *Processor) rotate(ctx context.Context, path string) error {
-	active, ok := w.activeFiles.Get(path)
+func (w *Processor) rotate(ctx context.Context, partitionKey string) error {
+	active, ok := w.activeFiles.Get(partitionKey)
 	if !ok {
 		return nil
 	}
@@ -152,14 +155,14 @@ func (w *Processor) rotate(ctx context.Context, path string) error {
 		return err
 	}
 
-	if err := w.storage.Publish(ctx, path); err != nil {
+	if err := w.storage.Publish(ctx, active.path); err != nil {
 		return err
 	}
 
-	w.activeFiles.Remove(path)
+	w.activeFiles.Remove(partitionKey)
 	return nil
 }
 
-func comp(a, b activeWriter) bool {
+func orderByWatermark(a, b activeWriter) bool {
 	return a.lastWatermark.Before(b.lastWatermark)
 }
