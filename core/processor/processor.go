@@ -15,19 +15,19 @@ type Processor struct {
 	storage     storage.Storage
 	strategy    partition.Strategy
 	mu          sync.RWMutex
-	activeFiles *PriorityQueue[string, *activeWriter]
+	activeFiles *PriorityQueue[string, activeWriter]
 }
 
 type activeWriter struct {
-	sync.RWMutex
+	mu            *sync.RWMutex
 	writer        *wal.WAL
 	firstRecord   partition.Record
 	lastWatermark time.Time
 }
 
 func (w *activeWriter) Write(rec partition.Record) error {
-	w.Lock()
-	defer w.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
 	if err := w.writer.Write(rec); err != nil {
 		return err
@@ -39,25 +39,17 @@ func (w *activeWriter) Write(rec partition.Record) error {
 }
 
 func (w *activeWriter) Close() error {
-	w.Lock()
-	defer w.Unlock()
+	w.mu.Lock()
+	defer w.mu.Unlock()
 
 	return w.writer.Close()
 }
 
 func New(storage storage.Storage, strategy partition.Strategy) *Processor {
 	return &Processor{
-		storage:  storage,
-		strategy: strategy,
-		activeFiles: NewPriorityQueue[string, *activeWriter](func(a, b *activeWriter) bool {
-			if a == nil {
-				return true
-			}
-			if b == nil {
-				return false
-			}
-			return a.lastWatermark.Before(b.lastWatermark)
-		}),
+		storage:     storage,
+		strategy:    strategy,
+		activeFiles: NewPriorityQueue[string, activeWriter](comp),
 	}
 }
 
@@ -77,7 +69,6 @@ func (w *Processor) Handle(ctx context.Context, record partition.Record) error {
 		}
 	}
 
-	// Use the thread-safe Write method of activeWriter
 	if err := active.Write(record); err != nil {
 		return fmt.Errorf("failed to write: %w", err)
 	}
@@ -119,26 +110,27 @@ func (w *Processor) Recover(ctx context.Context) error {
 	return nil
 }
 
-func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record, partitionKey string, shouldRotate bool) (*activeWriter, error) {
+func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record, partitionKey string, shouldRotate bool) (activeWriter, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	if shouldRotate {
 		if err := w.rotate(ctx, partitionKey); err != nil {
-			return nil, fmt.Errorf("failed to rotate: %w", err)
+			return activeWriter{}, fmt.Errorf("failed to rotate: %w", err)
 		}
 	}
 
 	filename := fmt.Sprintf("%s_%d.dat", partitionKey, record.GetWatermark().Unix())
 	writer, err := w.storage.Create(ctx, filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create file: %w", err)
+		return activeWriter{}, fmt.Errorf("failed to create file: %w", err)
 	}
 
-	active := &activeWriter{
+	active := activeWriter{
 		writer:        wal.NewWAL(writer),
 		firstRecord:   record,
 		lastWatermark: record.GetWatermark(),
+		mu:            &sync.RWMutex{},
 	}
 	w.activeFiles.Set(partitionKey, active)
 
@@ -161,4 +153,8 @@ func (w *Processor) rotate(ctx context.Context, path string) error {
 
 	w.activeFiles.Remove(path)
 	return nil
+}
+
+func comp(a, b activeWriter) bool {
+	return a.lastWatermark.Before(b.lastWatermark)
 }

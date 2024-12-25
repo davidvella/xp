@@ -64,7 +64,7 @@ func (pq *PriorityQueue[K, P]) Set(key K, value P) {
 func (pq *PriorityQueue[K, P]) Remove(key K) {
 	i, exists := pq.itemMap[key]
 	if !exists {
-		panic("key does not exist")
+		return
 	}
 
 	idx := i.index

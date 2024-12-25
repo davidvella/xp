@@ -122,6 +122,75 @@ func TestProcessor_Write(t *testing.T) {
 	}
 }
 
+func TestProcessor_WriteRecords(t *testing.T) {
+	t1 := time.Date(2024, 1, 1, 0, 0, 1, 0, time.UTC)
+	t2 := time.Date(2024, 1, 1, 0, 1, 1, 0, time.UTC)
+	tests := []struct {
+		name          string
+		records       []partition.Record
+		setupMocks    func() (*MockStorage, *MockStrategy)
+		expectedError error
+	}{
+		{
+			name: "successful write to new file",
+			records: []partition.Record{
+				partition.RecordImpl{
+					PartitionKey: "test",
+					Timestamp:    t1,
+					Data:         []byte("test data"),
+				},
+				partition.RecordImpl{
+					PartitionKey: "test",
+					Timestamp:    t2,
+					Data:         []byte("test data"),
+				},
+			},
+			setupMocks: func() (*MockStorage, *MockStrategy) {
+				writer := &MockWriteCloser{
+					writeFunc: func(p []byte) (int, error) {
+						return len(p), nil
+					},
+				}
+
+				storage := &MockStorage{
+					createFunc: func(ctx context.Context, path string) (io.WriteCloser, error) {
+						return writer, nil
+					},
+				}
+
+				strategy := &MockStrategy{
+					shouldRotateFunc: func(first, current partition.Record) bool {
+						return false
+					},
+				}
+
+				return storage, strategy
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			storage, strategy := tt.setupMocks()
+			proc := processor.New(storage, strategy)
+
+			for _, rec := range tt.records {
+				err := proc.Handle(context.Background(), rec)
+
+				if tt.expectedError != nil {
+					if err == nil {
+						t.Errorf("expected error %v, got nil", tt.expectedError)
+					} else if err.Error() != tt.expectedError.Error() {
+						t.Errorf("expected error %v, got %v", tt.expectedError, err)
+					}
+				} else if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestProcessor_Close(t *testing.T) {
 	tests := []struct {
 		name          string
