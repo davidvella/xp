@@ -57,6 +57,7 @@ func (t *Tree[E]) All() iter.Seq[E] {
 		for i, s := range t.sequences {
 			next, stop := iter.Pull(s.All())
 			t.nodes[i+len(t.sequences)].next = next
+			//nolint:gocritic // is not a leak.
 			defer stop()
 			t.moveNext(i + len(t.sequences)) // Call next() on each item to get the first value.
 		}
@@ -84,7 +85,7 @@ func (t *Tree[E]) initialize() {
 }
 
 // Find the winner at position pos; if it is a non-leaf node, store the loser.
-// pos must be >= 1 and < len(t.nodes)
+// pos must be >= 1 and < len(t.nodes).
 func (t *Tree[E]) playGame(pos int) int {
 	nodes := t.nodes
 	if pos >= len(nodes)/2 {

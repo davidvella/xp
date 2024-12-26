@@ -1,8 +1,9 @@
+//nolint:gosec // Don't need crypto security in test
 package priority_test
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"testing"
 
 	"github.com/davidvella/xp/core/priority"
@@ -169,13 +170,13 @@ func BenchmarkPriorityQueue(b *testing.B) {
 			// Pre-populate half of the items
 			for i := 0; i < size/2; i++ {
 				key := fmt.Sprintf("key-%d", i)
-				pq.Set(key, rand.Intn(10000))
+				pq.Set(key, rand.IntN(10000))
 			}
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				key := fmt.Sprintf("key-%d", i)
-				pq.Set(key, rand.Intn(10000))
+				pq.Set(key, rand.IntN(10000))
 			}
 		})
 
@@ -187,7 +188,7 @@ func BenchmarkPriorityQueue(b *testing.B) {
 			// Pre-populate items
 			for i := 0; i < size; i++ {
 				key := fmt.Sprintf("key-%d", i)
-				pq.Set(key, rand.Intn(10000))
+				pq.Set(key, rand.IntN(10000))
 			}
 
 			b.ResetTimer()
@@ -197,7 +198,7 @@ func BenchmarkPriorityQueue(b *testing.B) {
 					// Repopulate when empty
 					for j := 0; j < size; j++ {
 						key := fmt.Sprintf("key-%d", j)
-						pq.Set(key, rand.Intn(10000))
+						pq.Set(key, rand.IntN(10000))
 					}
 					b.StartTimer()
 				}
@@ -213,22 +214,22 @@ func BenchmarkPriorityQueue(b *testing.B) {
 			// Pre-populate items
 			for i := 0; i < size; i++ {
 				key := fmt.Sprintf("key-%d", i)
-				pq.Set(key, rand.Intn(10000))
+				pq.Set(key, rand.IntN(10000))
 			}
 
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				switch rand.Intn(3) {
+				switch rand.IntN(3) {
 				case 0:
-					key := fmt.Sprintf("key-%d", rand.Intn(size))
-					pq.Set(key, rand.Intn(10000))
+					key := fmt.Sprintf("key-%d", rand.IntN(size))
+					pq.Set(key, rand.IntN(10000))
 				case 1:
 					if pq.Len() > 0 {
 						_, _, _ = pq.Pop()
 					}
 				case 2:
 					if pq.Len() > 0 {
-						key := fmt.Sprintf("key-%d", rand.Intn(size))
+						key := fmt.Sprintf("key-%d", rand.IntN(size))
 						pq.Remove(key)
 					}
 				}

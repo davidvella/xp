@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// Storage implements Storage using the local filesystem
+// Storage implements Storage using the local filesystem.
 type Storage struct {
 	pendingDir    string
 	publishingDir string
@@ -23,9 +23,9 @@ func NewLocalStorage(pendingDir, publishingDir string) *Storage {
 
 func (s *Storage) Create(_ context.Context, path string) (io.WriteCloser, error) {
 	newPath := filepath.Join(s.pendingDir, filepath.Base(path))
-	file, err := os.OpenFile(newPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(newPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open file %s: %v", path, err)
+		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
 	}
 	return file, nil
 }

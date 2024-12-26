@@ -10,11 +10,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupTest(t *testing.T) (string, string, func()) {
-	pendingDir := t.TempDir()
-	publishingDir := t.TempDir()
+func setupTest(t *testing.T) (pendingDir, publishingDir string, cleanup func()) {
+	t.Helper()
 
-	cleanup := func() {
+	pendingDir = t.TempDir()
+	publishingDir = t.TempDir()
+
+	cleanup = func() {
 		os.RemoveAll(pendingDir)
 		os.RemoveAll(publishingDir)
 	}
@@ -80,7 +82,7 @@ func TestStorage_Publish(t *testing.T) {
 			name: "valid file publish",
 			path: "test.txt",
 			setup: func(dir string) error {
-				return os.WriteFile(filepath.Join(dir, "test.txt"), []byte("content"), 0644)
+				return os.WriteFile(filepath.Join(dir, "test.txt"), []byte("content"), 0o600)
 			},
 			wantErr: false,
 		},
@@ -150,9 +152,9 @@ func TestStorage_List(t *testing.T) {
 			// Setup files
 			for _, f := range tt.files {
 				if filepath.Ext(f) == "" {
-					assert.NoError(t, os.MkdirAll(filepath.Join(pendingDir, f), 0755))
+					assert.NoError(t, os.MkdirAll(filepath.Join(pendingDir, f), 0o600))
 				} else {
-					assert.NoError(t, os.WriteFile(filepath.Join(pendingDir, f), []byte("content"), 0644))
+					assert.NoError(t, os.WriteFile(filepath.Join(pendingDir, f), []byte("content"), 0o600))
 				}
 			}
 

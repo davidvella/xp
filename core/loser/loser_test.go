@@ -24,7 +24,7 @@ func (it *List[E]) All() iter.Seq[E] {
 	}
 }
 
-func checkIterablesEqual[E loser.Lesser[E]](t *testing.T, a loser.Sequence[E], b loser.Sequence[E]) {
+func checkIterablesEqual[E loser.Lesser[E]](t *testing.T, a, b loser.Sequence[E]) {
 	t.Helper()
 	count := 0
 	next, stop := iter.Pull(b.All())

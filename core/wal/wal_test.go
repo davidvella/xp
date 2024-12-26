@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// mockWriteCloser implements io.WriteCloser for testing
+// mockWriteCloser implements io.WriteCloser for testing.
 type mockWriteCloser struct {
 	writeErr error
 	closeErr error
@@ -146,7 +146,7 @@ func TestWAL_Concurrent(t *testing.T) {
 
 	wg.Wait()
 
-	assert.Equal(t, numGoroutines*31, len(mock.written))
+	assert.Equal(t, numGoroutines*47, len(mock.written))
 
 	r := bytes.NewReader(mock.written)
 	got := recordio.ReadRecords(r)

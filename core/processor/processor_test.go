@@ -34,7 +34,7 @@ func TestProcessor_Write(t *testing.T) {
 				}
 
 				storage := &MockStorage{
-					createFunc: func(ctx context.Context, path string) (io.WriteCloser, error) {
+					createFunc: func(_ context.Context, _ string) (io.WriteCloser, error) {
 						return writer, nil
 					},
 				}
@@ -57,7 +57,7 @@ func TestProcessor_Write(t *testing.T) {
 			},
 			setupMocks: func() (*MockStorage, *MockStrategy) {
 				storage := &MockStorage{
-					createFunc: func(ctx context.Context, path string) (io.WriteCloser, error) {
+					createFunc: func(_ context.Context, _ string) (io.WriteCloser, error) {
 						return nil, fmt.Errorf("storage error")
 					},
 				}
@@ -84,10 +84,10 @@ func TestProcessor_Write(t *testing.T) {
 				}
 
 				storage := &MockStorage{
-					createFunc: func(ctx context.Context, path string) (io.WriteCloser, error) {
+					createFunc: func(_ context.Context, _ string) (io.WriteCloser, error) {
 						return writer, nil
 					},
-					publishFunc: func(ctx context.Context, path string) error {
+					publishFunc: func(_ context.Context, _ string) error {
 						return nil
 					},
 				}
@@ -226,10 +226,10 @@ func TestProcessor_Close(t *testing.T) {
 				}
 
 				storage := &MockStorage{
-					createFunc: func(ctx context.Context, path string) (io.WriteCloser, error) {
+					createFunc: func(_ context.Context, _ string) (io.WriteCloser, error) {
 						return writer, nil
 					},
-					publishFunc: func(ctx context.Context, path string) error {
+					publishFunc: func(_ context.Context, _ string) error {
 						return nil
 					},
 				}
@@ -288,10 +288,10 @@ func TestProcessor_Recover(t *testing.T) {
 			name: "successful recovery",
 			setupMocks: func() (*MockStorage, *MockStrategy) {
 				storage := &MockStorage{
-					listFunc: func(ctx context.Context) ([]string, error) {
+					listFunc: func(_ context.Context) ([]string, error) {
 						return []string{"file1.dat", "file2.dat"}, nil
 					},
-					publishFunc: func(ctx context.Context, path string) error {
+					publishFunc: func(_ context.Context, _ string) error {
 						return nil
 					},
 				}
@@ -302,7 +302,7 @@ func TestProcessor_Recover(t *testing.T) {
 			name: "list error",
 			setupMocks: func() (*MockStorage, *MockStrategy) {
 				storage := &MockStorage{
-					listFunc: func(ctx context.Context) ([]string, error) {
+					listFunc: func(_ context.Context) ([]string, error) {
 						return nil, fmt.Errorf("list error")
 					},
 				}
@@ -332,7 +332,7 @@ func TestProcessor_Recover(t *testing.T) {
 	}
 }
 
-// MockStorage implements storage.Storage interface
+// MockStorage implements storage.Storage interface.
 type MockStorage struct {
 	createFunc  func(ctx context.Context, path string) (io.WriteCloser, error)
 	publishFunc func(ctx context.Context, path string) error
@@ -360,7 +360,7 @@ func (m *MockStorage) List(ctx context.Context) ([]string, error) {
 	return nil, fmt.Errorf("List not implemented")
 }
 
-// MockStrategy implements partition.Strategy interface
+// MockStrategy implements partition.Strategy interface.
 type MockStrategy struct {
 	shouldRotateFunc func(information partition.Information, watermark time.Time) bool
 }
@@ -372,7 +372,7 @@ func (m *MockStrategy) ShouldRotate(information partition.Information, watermark
 	return false
 }
 
-// MockWriteCloser implements io.WriteCloser
+// MockWriteCloser implements io.WriteCloser.
 type MockWriteCloser struct {
 	writeFunc func(p []byte) (n int, err error)
 	closeFunc func() error

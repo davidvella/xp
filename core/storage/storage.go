@@ -5,7 +5,7 @@ import (
 	"io"
 )
 
-// Storage defines the interface for the underlying storage system
+// Storage defines the interface for the underlying storage system.
 type Storage interface {
 	// Create a new file/object for writing
 	Create(ctx context.Context, path string) (io.WriteCloser, error)

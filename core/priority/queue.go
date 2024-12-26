@@ -1,20 +1,20 @@
 package priority
 
-// item represents an item in the value queue
+// item represents an item in the value queue.
 type item[K comparable, V any] struct {
 	key   K
 	value V
 	index int
 }
 
-// Queue implements a value queue using a heap
-type Queue[K comparable, P any] struct {
-	items   []*item[K, P]
-	itemMap map[K]*item[K, P]
-	lessF   func(a, b P) bool // returns true if a has higher priority than b
+// Queue implements a value queue using a heap.
+type Queue[K comparable, V any] struct {
+	items   []*item[K, V]
+	itemMap map[K]*item[K, V]
+	lessF   func(a, b V) bool // returns true if a has higher priority than b
 }
 
-// NewQueue creates a new priority queue with the given comparator
+// NewQueue creates a new priority queue with the given comparator.
 func NewQueue[K comparable, P any](less func(a, b P) bool) *Queue[K, P] {
 	return &Queue[K, P]{
 		items:   make([]*item[K, P], 0),
@@ -23,23 +23,23 @@ func NewQueue[K comparable, P any](less func(a, b P) bool) *Queue[K, P] {
 	}
 }
 
-// Len returns the number of items in the queue
-func (pq *Queue[K, P]) Len() int {
+// Len returns the number of items in the queue.
+func (pq *Queue[K, V]) Len() int {
 	return len(pq.items)
 }
 
-// Get adds a new key or updates an existing key's value
-func (pq *Queue[K, P]) Get(key K) (P, bool) {
+// Get adds a new key or updates an existing key's value.
+func (pq *Queue[K, V]) Get(key K) (V, bool) {
 	i, exists := pq.itemMap[key]
 	if !exists {
-		var zeroP P
+		var zeroP V
 		return zeroP, exists
 	}
 	return i.value, exists
 }
 
-// Set adds a new key or updates an existing key's value
-func (pq *Queue[K, P]) Set(key K, value P) {
+// Set adds a new key or updates an existing key's value.
+func (pq *Queue[K, V]) Set(key K, value V) {
 	if i, exists := pq.itemMap[key]; exists {
 		oldValue := i.value
 		i.value = value
@@ -49,7 +49,7 @@ func (pq *Queue[K, P]) Set(key K, value P) {
 			pq.down(i.index)
 		}
 	} else {
-		i := &item[K, P]{
+		i := &item[K, V]{
 			key:   key,
 			value: value,
 			index: len(pq.items),
@@ -60,8 +60,8 @@ func (pq *Queue[K, P]) Set(key K, value P) {
 	}
 }
 
-// Remove removes the given key from the queue
-func (pq *Queue[K, P]) Remove(key K) {
+// Remove removes the given key from the queue.
+func (pq *Queue[K, V]) Remove(key K) {
 	i, exists := pq.itemMap[key]
 	if !exists {
 		return
@@ -84,11 +84,11 @@ func (pq *Queue[K, P]) Remove(key K) {
 	delete(pq.itemMap, key)
 }
 
-// Pop removes and returns the highest priority item
-func (pq *Queue[K, P]) Pop() (K, P, bool) {
+// Pop removes and returns the highest priority item.
+func (pq *Queue[K, V]) Pop() (key K, value V, exists bool) {
 	if len(pq.items) == 0 {
 		var zeroK K
-		var zeroP P
+		var zeroP V
 		return zeroK, zeroP, false
 	}
 
@@ -97,31 +97,31 @@ func (pq *Queue[K, P]) Pop() (K, P, bool) {
 	return i.key, i.value, true
 }
 
-// Peek returns the highest priority item without removing it
-func (pq *Queue[K, P]) Peek() (K, P, bool) {
+// Peek returns the highest priority item without removing it.
+func (pq *Queue[K, V]) Peek() (key K, value V, exists bool) {
 	if len(pq.items) == 0 {
 		var zeroK K
-		var zeroP P
+		var zeroP V
 		return zeroK, zeroP, false
 	}
 	i := pq.items[0]
 	return i.key, i.value, true
 }
 
-// swap swaps items at index i and j
-func (pq *Queue[K, P]) swap(i, j int) {
+// swap swaps items at index i and j.
+func (pq *Queue[K, V]) swap(i, j int) {
 	pq.items[i], pq.items[j] = pq.items[j], pq.items[i]
 	pq.items[i].index = i
 	pq.items[j].index = j
 }
 
-// less compares items at index i and j
-func (pq *Queue[K, P]) less(i, j int) bool {
+// less compares items at index i and j.
+func (pq *Queue[K, V]) less(i, j int) bool {
 	return pq.lessF(pq.items[i].value, pq.items[j].value)
 }
 
-// up moves the element at index i up to its proper position
-func (pq *Queue[K, P]) up(i int) {
+// up moves the element at index i up to its proper position.
+func (pq *Queue[K, V]) up(i int) {
 	for {
 		parent := (i - 1) / 2
 		if parent == i || !pq.less(i, parent) {
@@ -132,8 +132,8 @@ func (pq *Queue[K, P]) up(i int) {
 	}
 }
 
-// down moves the element at index i down to its proper position
-func (pq *Queue[K, P]) down(i int) {
+// down moves the element at index i down to its proper position.
+func (pq *Queue[K, V]) down(i int) {
 	for {
 		smallest := i
 		left := 2*i + 1

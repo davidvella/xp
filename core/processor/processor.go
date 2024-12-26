@@ -82,7 +82,7 @@ func (w *Processor) Handle(ctx context.Context, record partition.Record) error {
 
 	if shouldRotate {
 		var err error
-		if active, err = w.getActiveWriter(ctx, record, partitionKey, shouldRotate); err != nil {
+		if active, err = w.getActiveWriter(ctx, record, partitionKey); err != nil {
 			return err
 		}
 	}
@@ -110,7 +110,7 @@ func (w *Processor) Close(ctx context.Context) error {
 			break
 		}
 		if err := w.rotate(ctx, k); err != nil {
-			return fmt.Errorf("failed to rotate during close: %v", err)
+			return fmt.Errorf("failed to rotate during close: %w", err)
 		}
 	}
 
@@ -120,19 +120,19 @@ func (w *Processor) Close(ctx context.Context) error {
 func (w *Processor) Recover(ctx context.Context) error {
 	files, err := w.storage.List(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list pending files: %v", err)
+		return fmt.Errorf("failed to list pending files: %w", err)
 	}
 
 	for _, file := range files {
 		if err := w.storage.Publish(ctx, file); err != nil {
-			return fmt.Errorf("failed to publish recovered file: %v", err)
+			return fmt.Errorf("failed to publish recovered file: %w", err)
 		}
 	}
 
 	return nil
 }
 
-func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record, partitionKey string, shouldRotate bool) (activeWriter, error) {
+func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record, partitionKey string) (activeWriter, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -184,7 +184,7 @@ func (w *Processor) cleanup(ctx context.Context, watermark time.Time) error {
 			break
 		}
 		if err := w.rotate(ctx, k); err != nil {
-			return fmt.Errorf("failed to rotate during close: %v", err)
+			return fmt.Errorf("failed to rotate during close: %w", err)
 		}
 		w.activeFiles.Remove(k)
 	}

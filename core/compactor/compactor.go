@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	// Create a string with the maximum Unicode code point (U+10FFFF)
+	// Create a string with the maximum Unicode code point (U+10FFFF).
 	maxPossibleString = "\U0010FFFF"
-	// The max time that can be represented
+	// The max time that can be represented.
 	maxTime   = time.Date(292277026596, 12, 4, 15, 30, 7, 999999999, time.UTC)
 	maxRecord = partition.RecordImpl{
 		ID:           maxPossibleString,
@@ -22,7 +22,7 @@ var (
 	}
 )
 
-// Compact performs streaming compaction of multiple sequences using a loser tree
+// Compact performs streaming compaction of multiple sequences using a loser tree.
 func Compact(w io.Writer, sequences ...loser.Sequence[partition.Record]) error {
 	if len(sequences) == 0 {
 		return nil

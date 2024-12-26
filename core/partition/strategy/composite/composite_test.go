@@ -7,7 +7,7 @@ import (
 	"github.com/davidvella/xp/core/partition"
 )
 
-// MockStrategy implements the partition.Strategy interface for testing
+// MockStrategy implements the partition.Strategy interface for testing.
 type MockStrategy struct {
 	shouldRotate bool
 }
