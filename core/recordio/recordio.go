@@ -87,6 +87,10 @@ func (br BinaryReader) ReadBytes() ([]byte, error) {
 
 // Write writes a single record to the writer.
 func Write(w io.Writer, data partition.Record) error {
+	if data == nil {
+		return nil
+	}
+
 	bw := NewBinaryWriter(w)
 
 	if err := bw.WriteString(data.GetID()); err != nil {
@@ -148,18 +152,17 @@ func ReadRecord(r io.Reader) (partition.Record, error) {
 		return nil, fmt.Errorf("error loading timezone: %w", err)
 	}
 
+	timestamp := time.Unix(0, unixNano).In(loc)
+
 	data, err := br.ReadBytes()
 	if err != nil {
 		return nil, fmt.Errorf("error reading data: %w", err)
 	}
 
-	// Read newline
 	nl := make([]byte, 1)
 	if _, err := io.ReadFull(r, nl); err != nil {
 		return nil, fmt.Errorf("error reading newline: %w", err)
 	}
-
-	timestamp := time.Unix(0, unixNano).In(loc)
 
 	return partition.RecordImpl{
 		ID:           id,
