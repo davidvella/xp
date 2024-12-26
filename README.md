@@ -7,8 +7,7 @@ stream into finite "buckets" that enable computational analysis. This library
 implements basic windowing functionality for streams using NoSQL database
 components, including a sequential record format (recordio), a sorted string
 table (sstable), and a write-ahead log (wal). I developed this library to enable
-stream windowing without requiring complex frameworks like Apache Beam running
-on Apache Flink.
+stream windowing without requiring complex frameworks like Apache Beam or Apache Flink.
 
 ## Features
 
