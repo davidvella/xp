@@ -169,7 +169,7 @@ type mockReader struct {
 	errorCounter int
 }
 
-func NewMockReader(data []byte, errorCount int) *mockReader {
+func newMockReader(data []byte, errorCount int) *mockReader {
 	return &mockReader{
 		Reader:       bytes.NewReader(data),
 		errorCounter: errorCount,
@@ -235,7 +235,7 @@ func TestReadHandleError(t *testing.T) {
 			err := recordio.Write(buf, record)
 			assert.NoError(t, err)
 
-			reader := NewMockReader(buf.Bytes(), tt.readCounterError)
+			reader := newMockReader(buf.Bytes(), tt.readCounterError)
 
 			_, err = recordio.ReadRecord(reader)
 
@@ -244,7 +244,6 @@ func TestReadHandleError(t *testing.T) {
 	}
 }
 
-// AddMetadata adds or updates metadata associated with the reader
 func (r *mockReader) Read(p []byte) (n int, err error) {
 	r.counter++
 	if r.counter == r.errorCounter {
