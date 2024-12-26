@@ -40,7 +40,7 @@ const (
 	magicHeader    = uint32(0x53535442) // "SSTB" in hex
 	magicFooter    = uint32(0x454E4442) // "ENDB" in hex
 	formatVersion  = uint32(1)
-	defaultBufSize = 32 * 1024
+	defaultBufSize = 52 * 1024
 )
 
 // Options configures the behavior of an SSTable.
@@ -66,6 +66,7 @@ type Table struct {
 	mu     sync.RWMutex
 	file   *os.File
 	buf    *bufio.ReadWriter
+	bw     recordio.BinaryWriter
 	opts   Options
 	closed bool
 
@@ -100,14 +101,17 @@ func Open(path string, opts *Options) (*Table, error) {
 		return nil, fmt.Errorf("sstable: failed to open file: %w", err)
 	}
 
+	buf := bufio.NewReadWriter(
+		bufio.NewReaderSize(file, opts.BufferSize),
+		bufio.NewWriterSize(file, opts.BufferSize),
+	)
+
 	t := &Table{
 		file:  file,
 		opts:  *opts,
 		index: make(map[string]blockOffset),
-		buf: bufio.NewReadWriter(
-			bufio.NewReaderSize(file, opts.BufferSize),
-			bufio.NewWriterSize(file, opts.BufferSize),
-		),
+		buf:   buf,
+		bw:    recordio.NewBinaryWriter(buf),
 	}
 
 	// Read existing file if not empty
@@ -320,25 +324,24 @@ func (t *Table) writeHeader() error {
 
 // writeIndex writes the current index to the file.
 func (t *Table) writeIndex() error {
-	bw := recordio.NewBinaryWriter(t.buf)
-	if _, err := bw.WriteInt64(int64(len(t.index))); err != nil {
+	if _, err := t.bw.WriteInt64(int64(len(t.index))); err != nil {
 		return err
 	}
 
 	for k, offset := range t.index {
-		if _, err := bw.WriteString(k); err != nil {
+		if _, err := t.bw.WriteString(k); err != nil {
 			return err
 		}
-		if _, err := bw.WriteInt64(offset.offset); err != nil {
+		if _, err := t.bw.WriteInt64(offset.offset); err != nil {
 			return err
 		}
-		if _, err := bw.WriteInt64(offset.size); err != nil {
+		if _, err := t.bw.WriteInt64(offset.size); err != nil {
 			return err
 		}
 	}
 
 	// Write footer with index offset and magic number
-	if _, err := bw.WriteInt64(t.dataEnd); err != nil {
+	if _, err := t.bw.WriteInt64(t.dataEnd); err != nil {
 		return err
 	}
 	if err := binary.Write(t.buf, binary.LittleEndian, magicFooter); err != nil {
