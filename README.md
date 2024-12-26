@@ -1,5 +1,10 @@
 # XP
 
+[![tag](https://img.shields.io/github/tag/davidvella/xp.svg)](https://github.com/davidvella/xp/releases)
+![Go Version](https://img.shields.io/badge/Go-%3E%3D%201.23-%23007d9c)
+[![GoDoc](https://godoc.org/github.com/davidvella/xp?status.svg)](https://pkg.go.dev/github.com/davidvella/xp)
+[![Go report](https://goreportcard.com/badge/github.com/davidvella/xp)](https://goreportcard.com/report/github.com/davidvella/xp)
+
 > Because Windows XP was the best Microsoft Windows OS.
 
 Windows are fundamental to processing infinite data streams. They partition the
