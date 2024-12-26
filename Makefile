@@ -9,7 +9,7 @@ tools: ## Installs required binaries locally
 	go install github.com/actgardner/gogen-avro/v10/cmd/...@latest
 
 ##@ Tests
-test: check ## Run unit tests
+test: ## Run unit tests
 	@echo "== unit test"
 	go test -short -cover ./...
 
