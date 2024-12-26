@@ -57,7 +57,7 @@ func TestWAL_Write(t *testing.T) {
 			record:     partition.RecordImpl{Data: []byte("test data")},
 			writeErr:   errors.New("write failed"),
 			wantErr:    true,
-			wantErrMsg: "failed to write record: error writing: write failed",
+			wantErrMsg: "failed to write record: error writing ID: error writing string length: write failed",
 		},
 		{
 			name:     "empty record",

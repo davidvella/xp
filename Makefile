@@ -9,7 +9,7 @@ tools: ## Installs required binaries locally
 	go install github.com/actgardner/gogen-avro/v10/cmd/...@latest
 
 ##@ Tests
-test: check ## Run unit tests
+test: ## Run unit tests
 	@echo "== unit test"
 	go test -short -cover ./...
 
@@ -18,3 +18,8 @@ check: tools ## Runs lint, fmt and vet checks against the codebase
 	golangci-lint run
 	go fmt ./...
 	go vet ./...
+
+##@ Coverage
+coverage: ## Runs code coverage
+	go test -v -coverprofile=cover.out -covermode=atomic ./...
+	go tool cover -html=cover.out -o cover.html
