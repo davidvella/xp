@@ -1,9 +1,11 @@
-package processor
+package priority_test
 
 import (
 	"fmt"
 	"math/rand"
 	"testing"
+
+	"github.com/davidvella/xp/core/priority"
 )
 
 func TestPriorityQueue(t *testing.T) {
@@ -68,7 +70,7 @@ func TestPriorityQueue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pq := NewPriorityQueue[string, int](func(a, b int) bool {
+			pq := priority.NewQueue[string, int](func(a, b int) bool {
 				return a < b
 			})
 
@@ -101,7 +103,7 @@ func TestPriorityQueue(t *testing.T) {
 }
 
 func TestPriorityQueueOrder(t *testing.T) {
-	pq := NewPriorityQueue[string, int](func(a, b int) bool {
+	pq := priority.NewQueue[string, int](func(a, b int) bool {
 		return a < b
 	})
 
@@ -160,7 +162,7 @@ func BenchmarkPriorityQueue(b *testing.B) {
 
 	for _, size := range sizes {
 		b.Run(fmt.Sprintf("Set_%d", size), func(b *testing.B) {
-			pq := NewPriorityQueue[string, int](func(a, b int) bool {
+			pq := priority.NewQueue[string, int](func(a, b int) bool {
 				return a < b
 			})
 
@@ -178,7 +180,7 @@ func BenchmarkPriorityQueue(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("Pop_%d", size), func(b *testing.B) {
-			pq := NewPriorityQueue[string, int](func(a, b int) bool {
+			pq := priority.NewQueue[string, int](func(a, b int) bool {
 				return a < b
 			})
 
@@ -204,7 +206,7 @@ func BenchmarkPriorityQueue(b *testing.B) {
 		})
 
 		b.Run(fmt.Sprintf("Mixed_%d", size), func(b *testing.B) {
-			pq := NewPriorityQueue[string, int](func(a, b int) bool {
+			pq := priority.NewQueue[string, int](func(a, b int) bool {
 				return a < b
 			})
 
@@ -227,9 +229,7 @@ func BenchmarkPriorityQueue(b *testing.B) {
 				case 2:
 					if pq.Len() > 0 {
 						key := fmt.Sprintf("key-%d", rand.Intn(size))
-						if _, exists := pq.itemMap[key]; exists {
-							pq.Remove(key)
-						}
+						pq.Remove(key)
 					}
 				}
 			}

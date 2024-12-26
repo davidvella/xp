@@ -18,10 +18,3 @@ check: tools ## Runs lint, fmt and vet checks against the codebase
 	golangci-lint run
 	go fmt ./...
 	go vet ./...
-
-##@ Generate
-generate: tools ## Generates the avro in the /avro folder
-	go generate ./...
-
-run-docker:
-	docker-compose up --build --force-recreate --no-deps

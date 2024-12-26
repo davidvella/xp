@@ -3,10 +3,12 @@ package processor
 import (
 	"context"
 	"fmt"
+	"io"
 	"sync"
 	"time"
 
 	"github.com/davidvella/xp/core/partition"
+	"github.com/davidvella/xp/core/priority"
 	"github.com/davidvella/xp/core/storage"
 	"github.com/davidvella/xp/core/wal"
 )
@@ -15,15 +17,29 @@ type Processor struct {
 	storage     storage.Storage
 	strategy    partition.Strategy
 	mu          sync.RWMutex
-	activeFiles *PriorityQueue[string, activeWriter]
+	activeFiles *priority.Queue[string, activeWriter]
 }
 
 type activeWriter struct {
 	mu            *sync.RWMutex
 	writer        *wal.WAL
 	information   partition.Information
-	path          string
+	name          string
 	lastWatermark time.Time
+}
+
+func newActiveWriter(writer io.WriteCloser, record partition.Record, name string) activeWriter {
+	return activeWriter{
+		writer: wal.NewWAL(writer),
+		information: partition.Information{
+			PartitionKey:   record.GetPartitionKey(),
+			RecordCount:    0,
+			FirstWatermark: record.GetWatermark(),
+		},
+		lastWatermark: record.GetWatermark(),
+		mu:            &sync.RWMutex{},
+		name:          name,
+	}
 }
 
 func (w *activeWriter) Write(rec partition.Record) error {
@@ -51,7 +67,7 @@ func New(storage storage.Storage, strategy partition.Strategy) *Processor {
 	return &Processor{
 		storage:     storage,
 		strategy:    strategy,
-		activeFiles: NewPriorityQueue[string, activeWriter](orderByWatermark),
+		activeFiles: priority.NewQueue[string, activeWriter](orderByWatermark),
 	}
 }
 
@@ -60,11 +76,11 @@ func (w *Processor) Handle(ctx context.Context, record partition.Record) error {
 
 	partitionKey := record.GetPartitionKey()
 	active, exists := w.activeFiles.Get(partitionKey)
-	shouldRotate := exists && w.strategy.ShouldRotate(active.information, record.GetWatermark())
+	shouldRotate := !exists || w.strategy.ShouldRotate(active.information, record.GetWatermark())
 
 	w.mu.RUnlock()
 
-	if !exists || shouldRotate {
+	if shouldRotate {
 		var err error
 		if active, err = w.getActiveWriter(ctx, record, partitionKey, shouldRotate); err != nil {
 			return err
@@ -76,6 +92,10 @@ func (w *Processor) Handle(ctx context.Context, record partition.Record) error {
 	}
 
 	w.activeFiles.Set(partitionKey, active)
+
+	if err := w.cleanup(ctx, record.GetWatermark()); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -116,38 +136,26 @@ func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if shouldRotate {
-		if err := w.rotate(ctx, partitionKey); err != nil {
-			return activeWriter{}, fmt.Errorf("failed to rotate: %w", err)
-		}
+	if err := w.rotate(ctx, partitionKey); err != nil {
+		return activeWriter{}, fmt.Errorf("failed to rotate: %w", err)
 	}
 
-	filename := fmt.Sprintf("%s_%d.dat", partitionKey, record.GetWatermark().Unix())
-	writer, err := w.storage.Create(ctx, filename)
+	writerName := fmt.Sprintf("%s_%d.dat", partitionKey, record.GetWatermark().Unix())
+	writer, err := w.storage.Create(ctx, writerName)
 	if err != nil {
-		return activeWriter{}, fmt.Errorf("failed to create file: %w", err)
+		return activeWriter{}, fmt.Errorf("failed to create writer: %w", err)
 	}
 
-	active := activeWriter{
-		writer: wal.NewWAL(writer),
-		information: partition.Information{
-			PartitionKey:   record.GetPartitionKey(),
-			RecordCount:    0,
-			FirstWatermark: record.GetWatermark(),
-		},
-		lastWatermark: record.GetWatermark(),
-		mu:            &sync.RWMutex{},
-		path:          filename,
-	}
-	
+	active := newActiveWriter(writer, record, writerName)
+
 	w.activeFiles.Set(partitionKey, active)
 
 	return active, nil
 }
 
 func (w *Processor) rotate(ctx context.Context, partitionKey string) error {
-	active, ok := w.activeFiles.Get(partitionKey)
-	if !ok {
+	active, found := w.activeFiles.Get(partitionKey)
+	if !found {
 		return nil
 	}
 
@@ -155,11 +163,32 @@ func (w *Processor) rotate(ctx context.Context, partitionKey string) error {
 		return err
 	}
 
-	if err := w.storage.Publish(ctx, active.path); err != nil {
+	if err := w.storage.Publish(ctx, active.name); err != nil {
 		return err
 	}
 
 	w.activeFiles.Remove(partitionKey)
+	return nil
+}
+
+func (w *Processor) cleanup(ctx context.Context, watermark time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for {
+		k, v, ok := w.activeFiles.Peek()
+		if !ok {
+			break
+		}
+		if !w.strategy.ShouldRotate(v.information, watermark) {
+			break
+		}
+		if err := w.rotate(ctx, k); err != nil {
+			return fmt.Errorf("failed to rotate during close: %v", err)
+		}
+		w.activeFiles.Remove(k)
+	}
+
 	return nil
 }
 

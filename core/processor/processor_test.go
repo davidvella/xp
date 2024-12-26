@@ -64,7 +64,7 @@ func TestProcessor_Write(t *testing.T) {
 				strategy := &MockStrategy{}
 				return storage, strategy
 			},
-			expectedError: fmt.Errorf("failed to create file: storage error"),
+			expectedError: fmt.Errorf("failed to create writer: storage error"),
 		},
 		{
 			name: "rotation needed and successful",
@@ -126,7 +126,7 @@ func TestProcessor_Write(t *testing.T) {
 func TestProcessor_WriteRecords(t *testing.T) {
 	t1 := time.Date(2024, 1, 1, 0, 0, 1, 0, time.UTC)
 	t2 := time.Date(2024, 1, 1, 0, 1, 1, 0, time.UTC)
-	t3 := time.Date(2024, 1, 1, 0, 2, 1, 0, time.UTC)
+	t3 := time.Date(2024, 1, 1, 0, 3, 1, 0, time.UTC)
 	tests := []struct {
 		name          string
 		records       []partition.Record
@@ -147,7 +147,7 @@ func TestProcessor_WriteRecords(t *testing.T) {
 					Data:         []byte("test data"),
 				},
 				partition.RecordImpl{
-					PartitionKey: "test",
+					PartitionKey: "test3",
 					Timestamp:    t3,
 					Data:         []byte("test data"),
 				},
@@ -173,8 +173,8 @@ func TestProcessor_WriteRecords(t *testing.T) {
 				}
 
 				strategy := &MockStrategy{
-					shouldRotateFunc: func(_ partition.Information, t time.Time) bool {
-						return t == t3
+					shouldRotateFunc: func(i partition.Information, t time.Time) bool {
+						return t.Sub(i.FirstWatermark) > 2*time.Minute
 					},
 				}
 
