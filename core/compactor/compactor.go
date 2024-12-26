@@ -44,7 +44,7 @@ func Compact(w io.Writer, sequences ...loser.Sequence[partition.Record]) error {
 			continue
 		}
 		if last != nil && current.GetID() != last.GetID() {
-			err := recordio.Write(w, last)
+			_, err := recordio.Write(w, last)
 			if err != nil {
 				return err
 			}
@@ -53,7 +53,7 @@ func Compact(w io.Writer, sequences ...loser.Sequence[partition.Record]) error {
 	}
 
 	if done {
-		err := recordio.Write(w, last)
+		_, err := recordio.Write(w, last)
 		if err != nil {
 			return err
 		}

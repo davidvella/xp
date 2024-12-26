@@ -11,6 +11,11 @@ import (
 	"github.com/davidvella/xp/core/partition"
 )
 
+var (
+	uint64Size = int64(binary.Size(uint64(0)))
+	int64Size  = int64(binary.Size(int64(0)))
+)
+
 // BinaryWriter handles writing binary data with error handling.
 type BinaryWriter struct {
 	w io.Writer
@@ -20,28 +25,44 @@ func NewBinaryWriter(w io.Writer) BinaryWriter {
 	return BinaryWriter{w: w}
 }
 
-func (bw BinaryWriter) WriteString(s string) error {
+func (bw BinaryWriter) WriteString(s string) (int64, error) {
+	// Write string length (uint64)
 	if err := binary.Write(bw.w, binary.LittleEndian, uint64(len(s))); err != nil {
-		return fmt.Errorf("error writing string length: %w", err)
+		return 0, fmt.Errorf("error writing string length: %w", err)
 	}
-	if _, err := bw.w.Write([]byte(s)); err != nil {
-		return fmt.Errorf("error writing string content: %w", err)
+
+	// Write string content
+	n, err := bw.w.Write([]byte(s))
+	if err != nil {
+		return uint64Size, fmt.Errorf("error writing string content: %w", err)
 	}
-	return nil
+
+	// Return total bytes written (length field + string content)
+	return uint64Size + int64(n), nil
 }
 
-func (bw BinaryWriter) WriteInt64(i int64) error {
-	return binary.Write(bw.w, binary.LittleEndian, i)
+func (bw BinaryWriter) WriteInt64(i int64) (int64, error) {
+	err := binary.Write(bw.w, binary.LittleEndian, i)
+	if err != nil {
+		return 0, err
+	}
+	return int64Size, nil
 }
 
-func (bw BinaryWriter) WriteBytes(b []byte) error {
+func (bw BinaryWriter) WriteBytes(b []byte) (int64, error) {
+	// Write bytes length (uint64)
 	if err := binary.Write(bw.w, binary.LittleEndian, uint64(len(b))); err != nil {
-		return fmt.Errorf("error writing bytes length: %w", err)
+		return 0, fmt.Errorf("error writing bytes length: %w", err)
 	}
-	if _, err := bw.w.Write(b); err != nil {
-		return fmt.Errorf("error writing bytes content: %w", err)
+
+	// Write bytes content
+	n, err := bw.w.Write(b)
+	if err != nil {
+		return uint64Size, fmt.Errorf("error writing bytes content: %w", err)
 	}
-	return nil
+
+	// Return total bytes written (length field + bytes content)
+	return uint64Size + int64(n), nil
 }
 
 // BinaryReader handles reading binary data with error handling.
@@ -86,38 +107,51 @@ func (br BinaryReader) ReadBytes() ([]byte, error) {
 }
 
 // Write writes a single record to the writer.
-func Write(w io.Writer, data partition.Record) error {
+func Write(w io.Writer, data partition.Record) (int64, error) {
 	if data == nil {
-		return nil
+		return 0, nil
 	}
 
 	bw := NewBinaryWriter(w)
+	var totalBytes int64
 
-	if err := bw.WriteString(data.GetID()); err != nil {
-		return fmt.Errorf("error writing ID: %w", err)
+	n, err := bw.WriteString(data.GetID())
+	if err != nil {
+		return totalBytes, fmt.Errorf("error writing ID: %w", err)
 	}
+	totalBytes += n
 
-	if err := bw.WriteString(data.GetPartitionKey()); err != nil {
-		return fmt.Errorf("error writing partition key: %w", err)
+	n, err = bw.WriteString(data.GetPartitionKey())
+	if err != nil {
+		return totalBytes, fmt.Errorf("error writing partition key: %w", err)
 	}
+	totalBytes += n
 
-	if err := bw.WriteInt64(data.GetWatermark().UnixNano()); err != nil {
-		return fmt.Errorf("error writing timestamp: %w", err)
+	n, err = bw.WriteInt64(data.GetWatermark().UnixNano())
+	if err != nil {
+		return totalBytes, fmt.Errorf("error writing timestamp: %w", err)
 	}
+	totalBytes += n
 
-	if err := bw.WriteString(data.GetWatermark().Location().String()); err != nil {
-		return fmt.Errorf("error writing timezone: %w", err)
+	n, err = bw.WriteString(data.GetWatermark().Location().String())
+	if err != nil {
+		return totalBytes, fmt.Errorf("error writing timezone: %w", err)
 	}
+	totalBytes += n
 
-	if err := bw.WriteBytes(data.GetData()); err != nil {
-		return fmt.Errorf("error writing data: %w", err)
+	n, err = bw.WriteBytes(data.GetData())
+	if err != nil {
+		return totalBytes, fmt.Errorf("error writing data: %w", err)
 	}
+	totalBytes += n
 
-	if _, err := w.Write([]byte{'\n'}); err != nil {
-		return fmt.Errorf("error writing newline: %w", err)
+	bN, err := w.Write([]byte{'\n'})
+	if err != nil {
+		return totalBytes, fmt.Errorf("error writing newline: %w", err)
 	}
+	totalBytes += int64(bN)
 
-	return nil
+	return totalBytes, nil
 }
 
 // ReadRecord reads a single record from the reader.

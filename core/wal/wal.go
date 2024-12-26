@@ -22,7 +22,7 @@ func (w *WAL) Write(rec partition.Record) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if err := recordio.Write(w.w, rec); err != nil {
+	if _, err := recordio.Write(w.w, rec); err != nil {
 		return fmt.Errorf("failed to write record: %w", err)
 	}
 

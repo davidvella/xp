@@ -35,7 +35,7 @@ var (
 	ErrCorruptedTable = errors.New("sstable: corrupted table data")
 )
 
-// File format constants
+// File format constants.
 const (
 	magicHeader    = uint32(0x53535442) // "SSTB" in hex
 	magicFooter    = uint32(0x454E4442) // "ENDB" in hex
@@ -59,12 +59,6 @@ type Options struct {
 type blockOffset struct {
 	offset int64
 	size   int64
-}
-
-// indexEntry represents an entry in the SSTable index.
-type indexEntry struct {
-	key    string
-	offset blockOffset
 }
 
 // Table represents a sorted string table.
@@ -101,7 +95,7 @@ func Open(path string, opts *Options) (*Table, error) {
 		flag = os.O_RDONLY
 	}
 
-	file, err := os.OpenFile(path, flag, 0666)
+	file, err := os.OpenFile(path, flag, 0o666)
 	if err != nil {
 		return nil, fmt.Errorf("sstable: failed to open file: %w", err)
 	}
@@ -179,12 +173,7 @@ func (t *Table) Put(record partition.Record) error {
 	}
 
 	// Write record
-	recordBuf := new(bytes.Buffer)
-	if err := recordio.Write(recordBuf, record); err != nil {
-		return fmt.Errorf("sstable: record write error: %w", err)
-	}
-
-	n, err := t.buf.Write(recordBuf.Bytes())
+	n, err := recordio.Write(t.buf, record)
 	if err != nil {
 		return fmt.Errorf("sstable: write error: %w", err)
 	}
@@ -196,11 +185,11 @@ func (t *Table) Put(record partition.Record) error {
 	// Update index
 	t.index[record.GetID()] = blockOffset{
 		offset: t.dataEnd,
-		size:   int64(n),
+		size:   n,
 	}
 
 	// Update data end position
-	t.dataEnd += int64(n)
+	t.dataEnd += n
 
 	// Write updated index
 	if err := t.writeIndex(); err != nil {
@@ -331,26 +320,25 @@ func (t *Table) writeHeader() error {
 
 // writeIndex writes the current index to the file.
 func (t *Table) writeIndex() error {
-
 	bw := recordio.NewBinaryWriter(t.buf)
-	if err := bw.WriteInt64(int64(len(t.index))); err != nil {
+	if _, err := bw.WriteInt64(int64(len(t.index))); err != nil {
 		return err
 	}
 
 	for k, offset := range t.index {
-		if err := bw.WriteString(k); err != nil {
+		if _, err := bw.WriteString(k); err != nil {
 			return err
 		}
-		if err := bw.WriteInt64(offset.offset); err != nil {
+		if _, err := bw.WriteInt64(offset.offset); err != nil {
 			return err
 		}
-		if err := bw.WriteInt64(offset.size); err != nil {
+		if _, err := bw.WriteInt64(offset.size); err != nil {
 			return err
 		}
 	}
 
 	// Write footer with index offset and magic number
-	if err := bw.WriteInt64(t.dataEnd); err != nil {
+	if _, err := bw.WriteInt64(t.dataEnd); err != nil {
 		return err
 	}
 	if err := binary.Write(t.buf, binary.LittleEndian, magicFooter); err != nil {
