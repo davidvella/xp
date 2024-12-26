@@ -1,13 +1,16 @@
-package sstable
+package sstable_test
 
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/davidvella/xp/core/partition"
+	"github.com/davidvella/xp/core/sstable"
+	"github.com/stretchr/testify/assert"
 )
 
 func newTestRecord(id string, data []byte) partition.Record {
@@ -24,11 +27,15 @@ func TestTableBasicOperations(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.sst")
 
 	// Test table creation
-	table, err := Open(path, nil)
+	table, err := sstable.Open(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
-	defer table.Close()
+
+	defer func(table *sstable.Table) {
+		err := table.Close()
+		assert.NoError(t, err)
+	}(table)
 
 	// Test single record write and read
 	record := newTestRecord("key1", []byte("value1"))
@@ -50,11 +57,14 @@ func TestTableMultipleRecords(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.sst")
 
-	table, err := Open(path, nil)
+	table, err := sstable.Open(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
-	defer table.Close()
+	defer func(table *sstable.Table) {
+		err := table.Close()
+		assert.NoError(t, err)
+	}(table)
 
 	// Write multiple records
 	records := []partition.Record{
@@ -88,7 +98,7 @@ func TestTableReopen(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.sst")
 
 	// Write records
-	table1, err := Open(path, nil)
+	table1, err := sstable.Open(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -109,11 +119,14 @@ func TestTableReopen(t *testing.T) {
 	}
 
 	// Reopen and verify
-	table2, err := Open(path, nil)
+	table2, err := sstable.Open(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to reopen table: %v", err)
 	}
-	defer table2.Close()
+	defer func(table *sstable.Table) {
+		err := table.Close()
+		assert.NoError(t, err)
+	}(table2)
 
 	for _, want := range records {
 		got, err := table2.Get(want.GetID())
@@ -133,11 +146,14 @@ func TestTableIterator(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.sst")
 
-	table, err := Open(path, nil)
+	table, err := sstable.Open(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
-	defer table.Close()
+	defer func(table *sstable.Table) {
+		err := table.Close()
+		assert.NoError(t, err)
+	}(table)
 
 	// Write records in random order
 	records := []partition.Record{
@@ -185,7 +201,7 @@ func TestTableReadOnly(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.sst")
 
 	// Create and populate table
-	table1, err := Open(path, nil)
+	table1, err := sstable.Open(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -200,11 +216,14 @@ func TestTableReadOnly(t *testing.T) {
 	}
 
 	// Reopen in read-only mode
-	table2, err := Open(path, &Options{ReadOnly: true})
+	table2, err := sstable.Open(path, &sstable.Options{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("Failed to open table in read-only mode: %v", err)
 	}
-	defer table2.Close()
+	defer func(table *sstable.Table) {
+		err := table.Close()
+		assert.NoError(t, err)
+	}(table2)
 
 	// Verify read works
 	got, err := table2.Get("key1")
@@ -227,11 +246,14 @@ func TestTableErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.sst")
 
-	table, err := Open(path, nil)
+	table, err := sstable.Open(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
-	defer table.Close()
+	defer func(table *sstable.Table) {
+		err := table.Close()
+		assert.NoError(t, err)
+	}(table)
 
 	// Test nil record
 	if err := table.Put(nil); err == nil {
@@ -244,7 +266,8 @@ func TestTableErrors(t *testing.T) {
 	}
 
 	// Test closed table operations
-	table.Close()
+	err = table.Close()
+	assert.NoError(t, err)
 
 	if err := table.Put(newTestRecord("key", []byte("value"))); err == nil {
 		t.Error("Write succeeded on closed table")
@@ -255,15 +278,93 @@ func TestTableErrors(t *testing.T) {
 	}
 }
 
-func BenchmarkTableWrite(b *testing.B) {
-	tmpDir := b.TempDir()
-	path := filepath.Join(tmpDir, "bench.sst")
+func setupBenchmarkTable(b *testing.B) (table *sstable.Table, cleanup func()) {
+	b.Helper()
 
-	table, err := Open(path, nil)
+	tmpFile, err := os.CreateTemp("", "sstable-bench-*.sst")
 	if err != nil {
-		b.Fatalf("Failed to create table: %v", err)
+		b.Fatal(err)
 	}
-	defer table.Close()
+
+	table, err = sstable.Open(tmpFile.Name(), nil)
+	if err != nil {
+		os.Remove(tmpFile.Name())
+		b.Fatal(err)
+	}
+
+	cleanup = func() {
+		table.Close()
+		os.Remove(tmpFile.Name())
+	}
+
+	return table, cleanup
+}
+
+func generateMockRecords(count int) []partition.Record {
+	records := make([]partition.Record, count)
+	for i := 0; i < count; i++ {
+		records[i] = &partition.RecordImpl{
+			ID:   fmt.Sprintf("key-%06d", i),
+			Data: []byte(fmt.Sprintf("value-%06d", i)),
+		}
+	}
+	return records
+}
+
+func BenchmarkBatchWriter(b *testing.B) {
+	benchCases := []struct {
+		name      string
+		batchSize int
+	}{
+		{"SmallBatch", 100},
+		{"MediumBatch", 1000},
+		{"LargeBatch", 10000},
+	}
+
+	for _, bc := range benchCases {
+		records := generateMockRecords(bc.batchSize)
+
+		b.Run(fmt.Sprintf("%s/SingleAdd/%d", bc.name, bc.batchSize), func(b *testing.B) {
+			table, cleanup := setupBenchmarkTable(b)
+			defer cleanup()
+
+			writer := table.BatchWriter()
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				for _, record := range records {
+					if err := writer.Add(record); err != nil {
+						b.Fatal(err)
+					}
+				}
+				if err := writer.Flush(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("%s/BatchAdd/%d", bc.name, bc.batchSize), func(b *testing.B) {
+			table, cleanup := setupBenchmarkTable(b)
+			defer cleanup()
+
+			writer := table.BatchWriter()
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if err := writer.AddAll(records); err != nil {
+					b.Fatal(err)
+				}
+				if err := writer.Flush(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkTableWrite(b *testing.B) {
+	table, cleanup := setupBenchmarkTable(b)
+	defer cleanup()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -278,15 +379,8 @@ func BenchmarkTableWrite(b *testing.B) {
 }
 
 func BenchmarkTableRead(b *testing.B) {
-	tmpDir := b.TempDir()
-	path := filepath.Join(tmpDir, "bench.sst")
-
-	// Setup: Create table and write test data
-	table, err := Open(path, nil)
-	if err != nil {
-		b.Fatalf("Failed to create table: %v", err)
-	}
-	defer table.Close()
+	table, cleanup := setupBenchmarkTable(b)
+	defer cleanup()
 
 	record := newTestRecord("benchkey", []byte("benchvalue"))
 	if err := table.Put(record); err != nil {

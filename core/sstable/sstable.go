@@ -8,8 +8,8 @@
 // which contains a set of arbitrary, sorted key-value pairs inside. Duplicate
 // keys are fine, there is no need for "padding" for keys or values, and keys
 // and values are arbitrary blobs. Read in the entire file sequentially and you
-// have a sorted index. Optionally, if the file is very large, we can also
-// prepend, or create a standalone key:offset index for fast access.
+// have a sorted memtable. Optionally, if the file is very large, we can also
+// prepend, or create a standalone key:offset memtable for fast access.
 package sstable
 
 import (
@@ -70,10 +70,10 @@ type Table struct {
 	opts   Options
 	closed bool
 
-	// In-memory index
-	index map[string]blockOffset
+	// In-memory memtable
+	memtable map[string]blockOffset
 
-	// Track the offset where data ends and index begins
+	// Track the offset where data ends and memtable begins
 	dataEnd int64
 }
 
@@ -107,11 +107,11 @@ func Open(path string, opts *Options) (*Table, error) {
 	)
 
 	t := &Table{
-		file:  file,
-		opts:  *opts,
-		index: make(map[string]blockOffset),
-		buf:   buf,
-		bw:    recordio.NewBinaryWriter(buf),
+		file:     file,
+		opts:     *opts,
+		memtable: make(map[string]blockOffset),
+		buf:      buf,
+		bw:       recordio.NewBinaryWriter(buf),
 	}
 
 	// Read existing file if not empty
@@ -176,18 +176,27 @@ func (t *Table) Put(record partition.Record) error {
 		return fmt.Errorf("sstable: seek error: %w", err)
 	}
 
+	if err := t.writeRecord(record); err != nil {
+		return err
+	}
+
+	// Write updated memtable
+	if err := t.writeIndex(); err != nil {
+		return fmt.Errorf("sstable: memtable write error: %w", err)
+	}
+
+	return t.buf.Flush()
+}
+
+func (t *Table) writeRecord(record partition.Record) error {
 	// Write record
 	n, err := recordio.Write(t.buf, record)
 	if err != nil {
-		return fmt.Errorf("sstable: write error: %w", err)
+		return err
 	}
 
-	if err := t.buf.Flush(); err != nil {
-		return fmt.Errorf("sstable: write error: %w", err)
-	}
-
-	// Update index
-	t.index[record.GetID()] = blockOffset{
+	// Update memtable
+	t.memtable[record.GetID()] = blockOffset{
 		offset: t.dataEnd,
 		size:   n,
 	}
@@ -195,12 +204,7 @@ func (t *Table) Put(record partition.Record) error {
 	// Update data end position
 	t.dataEnd += n
 
-	// Write updated index
-	if err := t.writeIndex(); err != nil {
-		return fmt.Errorf("sstable: index write error: %w", err)
-	}
-
-	return t.buf.Flush()
+	return nil
 }
 
 // Get retrieves a record by its key.
@@ -212,7 +216,7 @@ func (t *Table) Get(key string) (partition.Record, error) {
 		return nil, ErrTableClosed
 	}
 
-	offset, ok := t.index[key]
+	offset, ok := t.memtable[key]
 	if !ok {
 		return nil, ErrKeyNotFound
 	}
@@ -232,7 +236,7 @@ func (t *Table) Get(key string) (partition.Record, error) {
 	return record, nil
 }
 
-// loadTable reads the table format and loads the index.
+// loadTable reads the table format and loads the memtable.
 func (t *Table) loadTable() error {
 	// Read and verify header
 	var header uint32
@@ -252,8 +256,8 @@ func (t *Table) loadTable() error {
 		return fmt.Errorf("sstable: unsupported version %d", version)
 	}
 
-	// Find index position by reading footer from end of file
-	// Read index offset from footer
+	// Find memtable position by reading footer from end of file
+	// Read memtable offset from footer
 	var indexOffset int64
 	footerSize := int64(binary.Size(indexOffset) + binary.Size(magicFooter))
 	if _, err := t.file.Seek(-footerSize, io.SeekEnd); err != nil {
@@ -273,7 +277,7 @@ func (t *Table) loadTable() error {
 		return ErrCorruptedTable
 	}
 
-	// Read index
+	// Read memtable
 	t.dataEnd = indexOffset
 	if _, err := t.file.Seek(indexOffset, io.SeekStart); err != nil {
 		return err
@@ -282,27 +286,27 @@ func (t *Table) loadTable() error {
 	br := recordio.NewBinaryReader(t.file)
 	count, err := br.ReadInt64()
 	if err != nil {
-		return fmt.Errorf("sstable: invalid index count: %w", err)
+		return fmt.Errorf("sstable: invalid memtable count: %w", err)
 	}
 
-	t.index = make(map[string]blockOffset, count)
+	t.memtable = make(map[string]blockOffset, count)
 	for i := int64(0); i < count; i++ {
 		key, err := br.ReadString()
 		if err != nil {
-			return fmt.Errorf("sstable: invalid index key: %w", err)
+			return fmt.Errorf("sstable: invalid memtable key: %w", err)
 		}
 
 		offset, err := br.ReadInt64()
 		if err != nil {
-			return fmt.Errorf("sstable: invalid index offset: %w", err)
+			return fmt.Errorf("sstable: invalid memtable offset: %w", err)
 		}
 
 		size, err := br.ReadInt64()
 		if err != nil {
-			return fmt.Errorf("sstable: invalid index size: %w", err)
+			return fmt.Errorf("sstable: invalid memtable size: %w", err)
 		}
 
-		t.index[key] = blockOffset{
+		t.memtable[key] = blockOffset{
 			offset: offset,
 			size:   size,
 		}
@@ -322,13 +326,13 @@ func (t *Table) writeHeader() error {
 	return t.buf.Flush()
 }
 
-// writeIndex writes the current index to the file.
+// writeIndex writes the current memtable to the file.
 func (t *Table) writeIndex() error {
-	if _, err := t.bw.WriteInt64(int64(len(t.index))); err != nil {
+	if _, err := t.bw.WriteInt64(int64(len(t.memtable))); err != nil {
 		return err
 	}
 
-	for k, offset := range t.index {
+	for k, offset := range t.memtable {
 		if _, err := t.bw.WriteString(k); err != nil {
 			return err
 		}
@@ -340,7 +344,7 @@ func (t *Table) writeIndex() error {
 		}
 	}
 
-	// Write footer with index offset and magic number
+	// Write footer with memtable offset and magic number
 	if _, err := t.bw.WriteInt64(t.dataEnd); err != nil {
 		return err
 	}
@@ -363,8 +367,8 @@ func (t *Table) Iter() *Iterator {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	keys := make([]string, 0, len(t.index))
-	for k := range t.index {
+	keys := make([]string, 0, len(t.memtable))
+	for k := range t.memtable {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -391,4 +395,50 @@ func (it *Iterator) Next() (partition.Record, bool) {
 	}
 
 	return record, true
+}
+
+// BatchWriter creates a new BatchWriter instance.
+func (t *Table) BatchWriter() *BatchWriter {
+	return &BatchWriter{
+		table: t,
+	}
+}
+
+// BatchWriter provides functionality to write multiple records to an SSTable in batches.
+type BatchWriter struct {
+	table *Table
+}
+
+// Add adds a record to the batch. If the batch size reaches maxBatch,
+// it automatically flushes the records to the table.
+func (bw *BatchWriter) Add(record partition.Record) error {
+	if record == nil {
+		return ErrInvalidKey
+	}
+
+	return bw.table.writeRecord(record)
+}
+
+// AddAll adds multiple records to the batch, automatically flushing when needed.
+func (bw *BatchWriter) AddAll(records []partition.Record) error {
+	for _, record := range records {
+		if err := bw.Add(record); err != nil {
+			return fmt.Errorf("sstable: batch add error: %w", err)
+		}
+	}
+	return nil
+}
+
+// Flush writes all buffered records to the table in sorted order.
+func (bw *BatchWriter) Flush() error {
+	if err := bw.table.writeIndex(); err != nil {
+		return fmt.Errorf("sstable: index write error: %w", err)
+	}
+
+	return bw.table.buf.Flush()
+}
+
+// Close flushes any remaining records and releases resources.
+func (bw *BatchWriter) Close() error {
+	return bw.Flush()
 }
