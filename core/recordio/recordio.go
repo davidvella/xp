@@ -11,37 +11,104 @@ import (
 	"github.com/davidvella/xp/core/partition"
 )
 
+// BinaryWriter handles writing binary data with error handling.
+type BinaryWriter struct {
+	w io.Writer
+}
+
+func NewBinaryWriter(w io.Writer) BinaryWriter {
+	return BinaryWriter{w: w}
+}
+
+func (bw BinaryWriter) WriteString(s string) error {
+	if err := binary.Write(bw.w, binary.LittleEndian, uint64(len(s))); err != nil {
+		return fmt.Errorf("error writing string length: %w", err)
+	}
+	if _, err := bw.w.Write([]byte(s)); err != nil {
+		return fmt.Errorf("error writing string content: %w", err)
+	}
+	return nil
+}
+
+func (bw BinaryWriter) WriteInt64(i int64) error {
+	return binary.Write(bw.w, binary.LittleEndian, i)
+}
+
+func (bw BinaryWriter) WriteBytes(b []byte) error {
+	if err := binary.Write(bw.w, binary.LittleEndian, uint64(len(b))); err != nil {
+		return fmt.Errorf("error writing bytes length: %w", err)
+	}
+	if _, err := bw.w.Write(b); err != nil {
+		return fmt.Errorf("error writing bytes content: %w", err)
+	}
+	return nil
+}
+
+// BinaryReader handles reading binary data with error handling.
+type BinaryReader struct {
+	r io.Reader
+}
+
+func NewBinaryReader(r io.Reader) BinaryReader {
+	return BinaryReader{r: r}
+}
+
+func (br BinaryReader) ReadString() (string, error) {
+	var length uint64
+	if err := binary.Read(br.r, binary.LittleEndian, &length); err != nil {
+		return "", fmt.Errorf("error reading string length: %w", err)
+	}
+
+	bytes := make([]byte, length)
+	if _, err := io.ReadFull(br.r, bytes); err != nil {
+		return "", fmt.Errorf("error reading string content: %w", err)
+	}
+	return string(bytes), nil
+}
+
+func (br BinaryReader) ReadInt64() (int64, error) {
+	var value int64
+	err := binary.Read(br.r, binary.LittleEndian, &value)
+	return value, err
+}
+
+func (br BinaryReader) ReadBytes() ([]byte, error) {
+	var length uint64
+	if err := binary.Read(br.r, binary.LittleEndian, &length); err != nil {
+		return nil, fmt.Errorf("error reading bytes length: %w", err)
+	}
+
+	bytes := make([]byte, length)
+	if _, err := io.ReadFull(br.r, bytes); err != nil {
+		return nil, fmt.Errorf("error reading bytes content: %w", err)
+	}
+	return bytes, nil
+}
+
 // Write writes a single record to the writer.
 func Write(w io.Writer, data partition.Record) error {
-	// Handle ID length and ID
-	if err := writeString(w, data.GetID()); err != nil {
-		return err
+	bw := NewBinaryWriter(w)
+
+	if err := bw.WriteString(data.GetID()); err != nil {
+		return fmt.Errorf("error writing ID: %w", err)
 	}
 
-	// Handle PartitionKey length and PartitionKey
-	if err := writeString(w, data.GetPartitionKey()); err != nil {
-		return err
+	if err := bw.WriteString(data.GetPartitionKey()); err != nil {
+		return fmt.Errorf("error writing partition key: %w", err)
 	}
 
-	// Handle timestamp (8 bytes)
-	if err := binary.Write(w, binary.LittleEndian, data.GetWatermark().UnixNano()); err != nil {
+	if err := bw.WriteInt64(data.GetWatermark().UnixNano()); err != nil {
 		return fmt.Errorf("error writing timestamp: %w", err)
 	}
 
-	// Handle timezone name
-	if err := writeString(w, data.GetWatermark().Location().String()); err != nil {
+	if err := bw.WriteString(data.GetWatermark().Location().String()); err != nil {
 		return fmt.Errorf("error writing timezone: %w", err)
 	}
 
-	// Handle data length and data
-	if err := binary.Write(w, binary.LittleEndian, uint64(len(data.GetData()))); err != nil {
-		return fmt.Errorf("error writing data length: %w", err)
-	}
-	if _, err := w.Write(data.GetData()); err != nil {
+	if err := bw.WriteBytes(data.GetData()); err != nil {
 		return fmt.Errorf("error writing data: %w", err)
 	}
 
-	// Handle new line (1 byte)
 	if _, err := w.Write([]byte{'\n'}); err != nil {
 		return fmt.Errorf("error writing newline: %w", err)
 	}
@@ -49,77 +116,40 @@ func Write(w io.Writer, data partition.Record) error {
 	return nil
 }
 
-func writeString(w io.Writer, data string) error {
-	if err := binary.Write(w, binary.LittleEndian, uint64(len(data))); err != nil {
-		return fmt.Errorf("error writing: %w", err)
-	}
-	if _, err := w.Write([]byte(data)); err != nil {
-		return fmt.Errorf("error writing: %w", err)
-	}
-	return nil
-}
-
 // ReadRecord reads a single record from the reader.
 func ReadRecord(r io.Reader) (partition.Record, error) {
-	// Read ID length
-	var idLen uint64
-	if err := binary.Read(r, binary.LittleEndian, &idLen); err != nil {
+	br := NewBinaryReader(r)
+
+	id, err := br.ReadString()
+	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, err
 		}
-		return nil, fmt.Errorf("error reading ID length: %w", err)
-	}
-
-	// Read ID
-	idBytes := make([]byte, idLen)
-	if _, err := io.ReadFull(r, idBytes); err != nil {
 		return nil, fmt.Errorf("error reading ID: %w", err)
 	}
 
-	// Read PartitionKey length
-	var partitionKeyLen uint64
-	if err := binary.Read(r, binary.LittleEndian, &partitionKeyLen); err != nil {
-		return nil, fmt.Errorf("error reading PartitionKey length: %w", err)
+	partitionKey, err := br.ReadString()
+	if err != nil {
+		return nil, fmt.Errorf("error reading partition key: %w", err)
 	}
 
-	// Read PartitionKey
-	partitionKeyBytes := make([]byte, partitionKeyLen)
-	if _, err := io.ReadFull(r, partitionKeyBytes); err != nil {
-		return nil, fmt.Errorf("error reading PartitionKey: %w", err)
-	}
-
-	// Read timestamp
-	var unixNano int64
-	if err := binary.Read(r, binary.LittleEndian, &unixNano); err != nil {
+	unixNano, err := br.ReadInt64()
+	if err != nil {
 		return nil, fmt.Errorf("error reading timestamp: %w", err)
 	}
 
-	// Read timezone length and name
-	var timezoneLen uint64
-	if err := binary.Read(r, binary.LittleEndian, &timezoneLen); err != nil {
-		return nil, fmt.Errorf("error reading timezone length: %w", err)
-	}
-
-	timezoneBytes := make([]byte, timezoneLen)
-	if _, err := io.ReadFull(r, timezoneBytes); err != nil {
+	timezone, err := br.ReadString()
+	if err != nil {
 		return nil, fmt.Errorf("error reading timezone: %w", err)
 	}
 
-	// Load the timezone
-	loc, err := time.LoadLocation(string(timezoneBytes))
+	loc, err := time.LoadLocation(timezone)
 	if err != nil {
 		return nil, fmt.Errorf("error loading timezone: %w", err)
 	}
 
-	// Read data length
-	var dataLen uint64
-	if err := binary.Read(r, binary.LittleEndian, &dataLen); err != nil {
-		return nil, fmt.Errorf("error reading data length: %w", err)
-	}
-
-	// Read data
-	data := make([]byte, dataLen)
-	if _, err := io.ReadFull(r, data); err != nil {
+	data, err := br.ReadBytes()
+	if err != nil {
 		return nil, fmt.Errorf("error reading data: %w", err)
 	}
 
@@ -129,17 +159,17 @@ func ReadRecord(r io.Reader) (partition.Record, error) {
 		return nil, fmt.Errorf("error reading newline: %w", err)
 	}
 
-	// Create timestamp with the correct timezone
 	timestamp := time.Unix(0, unixNano).In(loc)
 
 	return partition.RecordImpl{
-		ID:           string(idBytes),
-		PartitionKey: string(partitionKeyBytes),
+		ID:           id,
+		PartitionKey: partitionKey,
 		Timestamp:    timestamp,
 		Data:         data,
 	}, nil
 }
 
+// Seq creates an iterator over records.
 func Seq(r io.Reader) iter.Seq[partition.Record] {
 	return func(yield func(partition.Record) bool) {
 		for {
@@ -157,8 +187,9 @@ func Seq(r io.Reader) iter.Seq[partition.Record] {
 	}
 }
 
+// ReadRecords reads all records into a slice.
 func ReadRecords(r io.Reader) []partition.Record {
-	var records = make([]partition.Record, 0, 1)
+	records := make([]partition.Record, 0, 1)
 	for record := range Seq(r) {
 		records = append(records, record)
 	}
