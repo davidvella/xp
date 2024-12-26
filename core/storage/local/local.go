@@ -22,8 +22,7 @@ func NewLocalStorage(pendingDir, publishingDir string) *Storage {
 }
 
 func (s *Storage) Create(_ context.Context, path string) (io.WriteCloser, error) {
-	newPath := filepath.Join(s.pendingDir, filepath.Base(path))
-	file, err := os.OpenFile(newPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	file, err := os.OpenFile(filepath.Join(s.pendingDir, filepath.Base(path)), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
 	}
