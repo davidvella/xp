@@ -1,7 +1,6 @@
 package sstable_test
 
 import (
-	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -22,15 +21,29 @@ func newTestRecord(id string, data []byte) partition.Record {
 	}
 }
 
-func TestTableBasicOperations(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.sst")
+func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
+	t.Helper()
 
-	// Test table creation
-	table, err := sstable.Open(path, nil)
+	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	assert.NoError(t, err)
+
+	table, err = sstable.Open(tmpFile.Name(), nil)
 	if err != nil {
-		t.Fatalf("Failed to create table: %v", err)
+		os.Remove(tmpFile.Name())
+		t.Fatal(err)
 	}
+
+	cleanup = func() {
+		table.Close()
+		os.Remove(tmpFile.Name())
+	}
+
+	return table, cleanup
+}
+
+func TestTableBasicOperations(t *testing.T) {
+	table, cleanup := setupTestingTable(t)
+	defer cleanup()
 
 	defer func(table *sstable.Table) {
 		err := table.Close()
@@ -39,32 +52,18 @@ func TestTableBasicOperations(t *testing.T) {
 
 	// Test single record write and read
 	record := newTestRecord("key1", []byte("value1"))
-	if err := table.Put(record); err != nil {
-		t.Errorf("Failed to write record: %v", err)
-	}
+	err := table.Put(record)
+	assert.NoError(t, err)
 
 	got, err := table.Get("key1")
-	if err != nil {
-		t.Errorf("Failed to read record: %v", err)
-	}
+	assert.NoError(t, err)
 
-	if !bytes.Equal(got.GetData(), record.GetData()) {
-		t.Errorf("Got %q, want %q", got.GetData(), record.GetData())
-	}
+	assert.Equal(t, got.GetData(), record.GetData())
 }
 
 func TestTableMultipleRecords(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.sst")
-
-	table, err := sstable.Open(path, nil)
-	if err != nil {
-		t.Fatalf("Failed to create table: %v", err)
-	}
-	defer func(table *sstable.Table) {
-		err := table.Close()
-		assert.NoError(t, err)
-	}(table)
+	table, cleanup := setupTestingTable(t)
+	defer cleanup()
 
 	// Write multiple records
 	records := []partition.Record{
@@ -74,22 +73,15 @@ func TestTableMultipleRecords(t *testing.T) {
 	}
 
 	for _, r := range records {
-		if err := table.Put(r); err != nil {
-			t.Errorf("Failed to write record: %v", err)
-		}
+		assert.NoError(t, table.Put(r))
 	}
 
 	// Read and verify all records
 	for _, want := range records {
 		got, err := table.Get(want.GetID())
-		if err != nil {
-			t.Errorf("Failed to read record %q: %v", want.GetID(), err)
-			continue
-		}
+		assert.NoError(t, err)
 
-		if !bytes.Equal(got.GetData(), want.GetData()) {
-			t.Errorf("Record %q: got %q, want %q", want.GetID(), got.GetData(), want.GetData())
-		}
+		assert.Equal(t, got.GetData(), want.GetData())
 	}
 }
 
@@ -109,14 +101,11 @@ func TestTableReopen(t *testing.T) {
 	}
 
 	for _, r := range records {
-		if err := table1.Put(r); err != nil {
-			t.Errorf("Failed to write record: %v", err)
-		}
+		assert.NoError(t, table1.Put(r))
 	}
 
-	if err := table1.Close(); err != nil {
-		t.Fatalf("Failed to close table: %v", err)
-	}
+	err = table1.Close()
+	assert.NoError(t, err)
 
 	// Reopen and verify
 	table2, err := sstable.Open(path, nil)
@@ -130,30 +119,15 @@ func TestTableReopen(t *testing.T) {
 
 	for _, want := range records {
 		got, err := table2.Get(want.GetID())
-		if err != nil {
-			t.Errorf("Failed to read record %q after reopen: %v", want.GetID(), err)
-			continue
-		}
+		assert.NoError(t, err)
 
-		if !bytes.Equal(got.GetData(), want.GetData()) {
-			t.Errorf("Record %q after reopen: got %q, want %q",
-				want.GetID(), got.GetData(), want.GetData())
-		}
+		assert.Equal(t, got.GetData(), want.GetData())
 	}
 }
 
 func TestTableIterator(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.sst")
-
-	table, err := sstable.Open(path, nil)
-	if err != nil {
-		t.Fatalf("Failed to create table: %v", err)
-	}
-	defer func(table *sstable.Table) {
-		err := table.Close()
-		assert.NoError(t, err)
-	}(table)
+	table, cleanup := setupTestingTable(t)
+	defer cleanup()
 
 	// Write records in random order
 	records := []partition.Record{
@@ -163,9 +137,7 @@ func TestTableIterator(t *testing.T) {
 	}
 
 	for _, r := range records {
-		if err := table.Put(r); err != nil {
-			t.Errorf("Failed to write record: %v", err)
-		}
+		assert.NoError(t, table.Put(r))
 	}
 
 	// Verify iterator returns records in sorted order
@@ -184,10 +156,7 @@ func TestTableIterator(t *testing.T) {
 			break
 		}
 
-		if record.GetID() != expectedKeys[i] {
-			t.Errorf("Iterator record %d: got key %q, want %q",
-				i, record.GetID(), expectedKeys[i])
-		}
+		assert.Equal(t, record.GetID(), expectedKeys[i])
 		i++
 	}
 
@@ -200,25 +169,21 @@ func TestTableReadOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.sst")
 
-	// Create and populate table
+	// Write records
 	table1, err := sstable.Open(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
 
 	record := newTestRecord("key1", []byte("value1"))
-	if err := table1.Put(record); err != nil {
-		t.Errorf("Failed to write record: %v", err)
-	}
+	assert.NoError(t, table1.Put(record))
 
-	if err := table1.Close(); err != nil {
-		t.Fatalf("Failed to close table: %v", err)
-	}
+	assert.NoError(t, table1.Close())
 
 	// Reopen in read-only mode
 	table2, err := sstable.Open(path, &sstable.Options{ReadOnly: true})
 	if err != nil {
-		t.Fatalf("Failed to open table in read-only mode: %v", err)
+		t.Fatalf("Failed to reopen table: %v", err)
 	}
 	defer func(table *sstable.Table) {
 		err := table.Close()
@@ -227,55 +192,32 @@ func TestTableReadOnly(t *testing.T) {
 
 	// Verify read works
 	got, err := table2.Get("key1")
-	if err != nil {
-		t.Errorf("Failed to read record in read-only mode: %v", err)
-	}
+	assert.NoError(t, err)
 
-	if !bytes.Equal(got.GetData(), record.GetData()) {
-		t.Errorf("Read-only record: got %q, want %q", got.GetData(), record.GetData())
-	}
+	assert.Equal(t, got.GetData(), record.GetData())
 
 	// Verify write fails
 	err = table2.Put(newTestRecord("key2", []byte("value2")))
-	if err == nil {
-		t.Error("Write succeeded in read-only mode")
-	}
+	assert.Error(t, err)
 }
 
 func TestTableErrors(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test.sst")
+	table, cleanup := setupTestingTable(t)
+	defer cleanup()
 
-	table, err := sstable.Open(path, nil)
-	if err != nil {
-		t.Fatalf("Failed to create table: %v", err)
-	}
-	defer func(table *sstable.Table) {
-		err := table.Close()
-		assert.NoError(t, err)
-	}(table)
-
-	// Test nil record
-	if err := table.Put(nil); err == nil {
-		t.Error("Expected error for nil record")
-	}
+	assert.Error(t, table.Put(nil))
 
 	// Test non-existent key
-	if _, err := table.Get("nonexistent"); err == nil {
-		t.Error("Expected error for non-existent key")
-	}
+	_, err := table.Get("nonexistent")
+	assert.Error(t, err)
 
 	// Test closed table operations
-	err = table.Close()
-	assert.NoError(t, err)
+	assert.NoError(t, table.Close())
 
-	if err := table.Put(newTestRecord("key", []byte("value"))); err == nil {
-		t.Error("Write succeeded on closed table")
-	}
+	assert.Error(t, table.Put(newTestRecord("key", []byte("value"))))
 
-	if _, err := table.Get("key"); err == nil {
-		t.Error("Read succeeded on closed table")
-	}
+	_, err = table.Get("key")
+	assert.Error(t, err)
 }
 
 func setupBenchmarkTable(b *testing.B) (table *sstable.Table, cleanup func()) {
