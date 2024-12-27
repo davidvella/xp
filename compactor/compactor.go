@@ -4,9 +4,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/davidvella/xp/core/loser"
-	"github.com/davidvella/xp/core/partition"
-	"github.com/davidvella/xp/core/recordio"
+	"github.com/davidvella/xp/loser"
+	"github.com/davidvella/xp/partition"
+	"github.com/davidvella/xp/recordio"
 )
 
 var (

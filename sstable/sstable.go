@@ -23,8 +23,8 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/davidvella/xp/core/partition"
-	"github.com/davidvella/xp/core/recordio"
+	"github.com/davidvella/xp/partition"
+	"github.com/davidvella/xp/recordio"
 )
 
 // Common errors that can be returned by SSTable operations.

@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/davidvella/xp/core/sstable"
+	"github.com/davidvella/xp/sstable"
 	"github.com/stretchr/testify/assert"
 )
 

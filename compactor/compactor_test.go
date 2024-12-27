@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidvella/xp/core/compactor"
-	"github.com/davidvella/xp/core/loser"
-	"github.com/davidvella/xp/core/partition"
-	"github.com/davidvella/xp/core/recordio"
+	"github.com/davidvella/xp/compactor"
+	"github.com/davidvella/xp/loser"
+	"github.com/davidvella/xp/partition"
+	"github.com/davidvella/xp/recordio"
 	"github.com/stretchr/testify/assert"
 )
 

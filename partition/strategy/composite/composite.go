@@ -3,7 +3,7 @@ package composite
 import (
 	"time"
 
-	"github.com/davidvella/xp/core/partition"
+	"github.com/davidvella/xp/partition"
 )
 
 var _ partition.Strategy = &Strategy{}

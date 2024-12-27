@@ -5,7 +5,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/davidvella/xp/core/loser"
+	"github.com/davidvella/xp/loser"
 )
 
 type List[E loser.Lesser[E]] struct {

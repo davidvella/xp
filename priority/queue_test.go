@@ -6,7 +6,7 @@ import (
 	"math/rand/v2"
 	"testing"
 
-	"github.com/davidvella/xp/core/priority"
+	"github.com/davidvella/xp/priority"
 )
 
 func TestPriorityQueue(t *testing.T) {

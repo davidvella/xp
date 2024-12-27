@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidvella/xp/core/partition"
+	"github.com/davidvella/xp/partition"
 )
 
 // MockStrategy implements the partition.Strategy interface for testing.

@@ -3,7 +3,7 @@ package messagecount
 import (
 	"time"
 
-	"github.com/davidvella/xp/core/partition"
+	"github.com/davidvella/xp/partition"
 )
 
 type Strategy struct {

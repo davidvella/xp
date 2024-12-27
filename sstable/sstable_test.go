@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davidvella/xp/core/partition"
-	"github.com/davidvella/xp/core/sstable"
+	"github.com/davidvella/xp/partition"
+	"github.com/davidvella/xp/sstable"
 	"github.com/stretchr/testify/assert"
 )
 

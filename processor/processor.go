@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davidvella/xp/core/partition"
-	"github.com/davidvella/xp/core/priority"
-	"github.com/davidvella/xp/core/wal"
+	"github.com/davidvella/xp/partition"
+	"github.com/davidvella/xp/priority"
+	"github.com/davidvella/xp/wal"
 )
 
 // Storage defines the interface for the underlying storage system.

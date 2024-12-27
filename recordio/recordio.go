@@ -8,7 +8,7 @@ import (
 	"iter"
 	"time"
 
-	"github.com/davidvella/xp/core/partition"
+	"github.com/davidvella/xp/partition"
 )
 
 var (
