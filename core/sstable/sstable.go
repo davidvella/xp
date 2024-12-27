@@ -13,7 +13,6 @@
 package sstable
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
@@ -67,12 +66,12 @@ type blockOffset struct {
 type Table struct {
 	mu     sync.RWMutex
 	file   *os.File
-	buf    *bufio.ReadWriter
+	buf    *ReaderWriterSeeker
 	bw     recordio.BinaryWriter
+	br     recordio.BinaryReader
 	opts   Options
 	closed bool
-
-	// In-memory memtable
+	
 	memtable map[string]blockOffset
 
 	// Track the offset where data ends and memtable begins
@@ -103,10 +102,7 @@ func Open(path string, opts *Options) (*Table, error) {
 		return nil, fmt.Errorf("sstable: failed to open file: %w", err)
 	}
 
-	buf := bufio.NewReadWriter(
-		bufio.NewReaderSize(file, opts.BufferSize),
-		bufio.NewWriterSize(file, opts.BufferSize),
-	)
+	buf := NewReadWriteSeeker(file, opts.BufferSize)
 
 	t := &Table{
 		file:     file,
@@ -114,19 +110,18 @@ func Open(path string, opts *Options) (*Table, error) {
 		memtable: make(map[string]blockOffset),
 		buf:      buf,
 		bw:       recordio.NewBinaryWriter(buf),
+		br:       recordio.NewBinaryReader(buf),
 	}
 
 	// Read existing file if not empty
 	if fi, err := file.Stat(); err == nil && fi.Size() > 0 {
 		if err := t.loadTable(); err != nil {
-			t.Close()
-			return nil, err
+			return nil, errors.Join(err, t.Close())
 		}
 	} else {
 		// New file, write header
 		if err := t.writeHeader(); err != nil {
-			t.Close()
-			return nil, err
+			return nil, errors.Join(err, t.Close())
 		}
 		t.dataEnd = int64(binary.Size(magicHeader) + binary.Size(formatVersion))
 	}
@@ -166,7 +161,7 @@ func (t *Table) Put(record partition.Record) error {
 	defer t.mu.Unlock()
 
 	// Seek to end of data section
-	if _, err := t.file.Seek(t.dataEnd, io.SeekStart); err != nil {
+	if _, err := t.buf.Seek(t.dataEnd, io.SeekStart); err != nil {
 		return fmt.Errorf("sstable: seek error: %w", err)
 	}
 
@@ -225,7 +220,7 @@ func (t *Table) Get(key string) (partition.Record, error) {
 
 	// Read record data
 	data := make([]byte, offset.size)
-	if _, err := t.file.ReadAt(data, offset.offset); err != nil {
+	if _, err := t.buf.ReadAt(data, offset.offset); err != nil {
 		return nil, fmt.Errorf("sstable: read error: %w", err)
 	}
 
@@ -240,75 +235,57 @@ func (t *Table) Get(key string) (partition.Record, error) {
 
 // loadTable reads the table format and loads the memtable.
 func (t *Table) loadTable() error {
-	// Read and verify header
 	var (
-		header  int64
-		version int64
-		err     error
+		err error
 	)
 
-	br := recordio.NewBinaryReader(t.file)
-
-	if header, err = br.ReadInt64(); err != nil {
-		return fmt.Errorf("sstable: invalid header: %w", err)
-	}
-	if header != magicHeader {
-		return ErrCorruptedTable
-	}
-
-	// Read version
-	if version, err = br.ReadInt64(); err != nil {
-		return fmt.Errorf("sstable: invalid version: %w", err)
-	}
-	if version != formatVersion {
-		return fmt.Errorf("sstable: unsupported version %d", version)
-	}
-
-	// Find memtable position by reading footer from end of file
-	// Read memtable offset from footer
-	var indexOffset int64
-	footerSize := int64(binary.Size(indexOffset) + binary.Size(magicFooter))
-	if _, err := t.file.Seek(-footerSize, io.SeekEnd); err != nil {
+	_, err = t.buf.Seek(0, io.SeekStart)
+	if err != nil {
 		return err
 	}
 
-	if indexOffset, err = br.ReadInt64(); err != nil {
+	if err := t.checkHeader(); err != nil {
 		return err
 	}
 
-	// Verify footer magic
-	var footer int64
-	if footer, err = br.ReadInt64(); err != nil {
+	indexOffset, err := t.extractIndexOffset()
+	if err != nil {
 		return err
 	}
-	if footer != magicFooter {
-		return ErrCorruptedTable
+
+	err = t.readMemTable(indexOffset)
+	if err != nil {
+		return err
 	}
 
+	return nil
+}
+
+func (t *Table) readMemTable(indexOffset int64) error {
 	// Read memtable
 	t.dataEnd = indexOffset
 	if _, err := t.file.Seek(indexOffset, io.SeekStart); err != nil {
 		return err
 	}
 
-	count, err := br.ReadInt64()
+	count, err := t.br.ReadInt64()
 	if err != nil {
 		return fmt.Errorf("sstable: invalid memtable count: %w", err)
 	}
 
 	t.memtable = make(map[string]blockOffset, count)
 	for i := int64(0); i < count; i++ {
-		key, err := br.ReadString()
+		key, err := t.br.ReadString()
 		if err != nil {
 			return fmt.Errorf("sstable: invalid memtable key: %w", err)
 		}
 
-		offset, err := br.ReadInt64()
+		offset, err := t.br.ReadInt64()
 		if err != nil {
 			return fmt.Errorf("sstable: invalid memtable offset: %w", err)
 		}
 
-		size, err := br.ReadInt64()
+		size, err := t.br.ReadInt64()
 		if err != nil {
 			return fmt.Errorf("sstable: invalid memtable size: %w", err)
 		}
@@ -318,8 +295,58 @@ func (t *Table) loadTable() error {
 			size:   size,
 		}
 	}
+	return nil
+}
+
+func (t *Table) checkHeader() error {
+	var (
+		header  int64
+		version int64
+		err     error
+	)
+	if header, err = t.br.ReadInt64(); err != nil {
+		return fmt.Errorf("sstable: invalid header: %w", err)
+	}
+	if header != magicHeader {
+		return ErrCorruptedTable
+	}
+
+	// Read version
+	if version, err = t.br.ReadInt64(); err != nil {
+		return fmt.Errorf("sstable: invalid version: %w", err)
+	}
+	if version != formatVersion {
+		return fmt.Errorf("sstable: unsupported version %d", version)
+	}
 
 	return nil
+}
+
+func (t *Table) extractIndexOffset() (int64, error) {
+	// Find memtable position by reading footer from end of file
+	// Read memtable offset from footer
+	var indexOffset int64
+	var err error
+
+	footerSize := int64(binary.Size(indexOffset) + binary.Size(magicFooter))
+	if _, err = t.buf.Seek(-footerSize, io.SeekEnd); err != nil {
+		return 0, err
+	}
+
+	if indexOffset, err = t.br.ReadInt64(); err != nil {
+		return 0, err
+	}
+
+	// Verify footer magic
+	var footer int64
+	if footer, err = t.br.ReadInt64(); err != nil {
+		return 0, err
+	}
+	if footer != magicFooter {
+		return 0, ErrCorruptedTable
+	}
+
+	return indexOffset, nil
 }
 
 // writeHeader writes the SSTable file header.

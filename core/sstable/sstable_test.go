@@ -41,6 +41,25 @@ func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
 	return table, cleanup
 }
 
+func TestHandleErrorWhenDirectoryNotExists(t *testing.T) {
+	_, err := sstable.Open("/imabadpath", nil)
+	assert.Error(t, err)
+}
+
+func TestHandleInvalidFile(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	assert.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+
+	p := tmpFile.Name()
+	_, err = tmpFile.Write([]byte("im a bad file"))
+	assert.NoError(t, err)
+	assert.NoError(t, tmpFile.Close())
+
+	_, err = sstable.Open(p, nil)
+	assert.Error(t, err)
+}
+
 func TestTableBasicOperations(t *testing.T) {
 	table, cleanup := setupTestingTable(t)
 	defer cleanup()
