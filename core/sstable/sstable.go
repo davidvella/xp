@@ -39,9 +39,9 @@ var (
 
 // File format constants.
 const (
-	magicHeader    = uint32(0x53535442) // "SSTB" in hex
-	magicFooter    = uint32(0x454E4442) // "ENDB" in hex
-	formatVersion  = uint32(1)
+	magicHeader    = int64(0x53535442) // "SSTB" in hex
+	magicFooter    = int64(0x454E4442) // "ENDB" in hex
+	formatVersion  = int64(1)
 	defaultBufSize = 52 * 1024
 )
 
@@ -241,8 +241,15 @@ func (t *Table) Get(key string) (partition.Record, error) {
 // loadTable reads the table format and loads the memtable.
 func (t *Table) loadTable() error {
 	// Read and verify header
-	var header uint32
-	if err := binary.Read(t.buf, binary.LittleEndian, &header); err != nil {
+	var (
+		header  int64
+		version int64
+		err     error
+	)
+
+	br := recordio.NewBinaryReader(t.file)
+
+	if header, err = br.ReadInt64(); err != nil {
 		return fmt.Errorf("sstable: invalid header: %w", err)
 	}
 	if header != magicHeader {
@@ -250,8 +257,7 @@ func (t *Table) loadTable() error {
 	}
 
 	// Read version
-	var version uint32
-	if err := binary.Read(t.buf, binary.LittleEndian, &version); err != nil {
+	if version, err = br.ReadInt64(); err != nil {
 		return fmt.Errorf("sstable: invalid version: %w", err)
 	}
 	if version != formatVersion {
@@ -266,13 +272,13 @@ func (t *Table) loadTable() error {
 		return err
 	}
 
-	if err := binary.Read(t.file, binary.LittleEndian, &indexOffset); err != nil {
+	if indexOffset, err = br.ReadInt64(); err != nil {
 		return err
 	}
 
 	// Verify footer magic
-	var footer uint32
-	if err := binary.Read(t.file, binary.LittleEndian, &footer); err != nil {
+	var footer int64
+	if footer, err = br.ReadInt64(); err != nil {
 		return err
 	}
 	if footer != magicFooter {
@@ -285,7 +291,6 @@ func (t *Table) loadTable() error {
 		return err
 	}
 
-	br := recordio.NewBinaryReader(t.file)
 	count, err := br.ReadInt64()
 	if err != nil {
 		return fmt.Errorf("sstable: invalid memtable count: %w", err)
@@ -350,7 +355,7 @@ func (t *Table) writeIndex() error {
 	if _, err := t.bw.WriteInt64(t.dataEnd); err != nil {
 		return err
 	}
-	if err := binary.Write(t.buf, binary.LittleEndian, magicFooter); err != nil {
+	if _, err := t.bw.WriteInt64(magicFooter); err != nil {
 		return err
 	}
 
