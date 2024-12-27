@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"sort"
 	"sync"
@@ -33,6 +34,7 @@ var (
 	ErrInvalidKey     = errors.New("sstable: invalid key")
 	ErrKeyNotFound    = errors.New("sstable: key not found")
 	ErrCorruptedTable = errors.New("sstable: corrupted table data")
+	ErrReadOnlyTable  = errors.New("sstable: cannot write to read-only table")
 )
 
 // File format constants.
@@ -163,14 +165,6 @@ func (t *Table) Put(record partition.Record) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	if t.closed {
-		return ErrTableClosed
-	}
-
-	if t.opts.ReadOnly {
-		return errors.New("sstable: cannot write to read-only table")
-	}
-
 	// Seek to end of data section
 	if _, err := t.file.Seek(t.dataEnd, io.SeekStart); err != nil {
 		return fmt.Errorf("sstable: seek error: %w", err)
@@ -189,6 +183,14 @@ func (t *Table) Put(record partition.Record) error {
 }
 
 func (t *Table) writeRecord(record partition.Record) error {
+	if t.closed {
+		return ErrTableClosed
+	}
+
+	if t.opts.ReadOnly {
+		return ErrReadOnlyTable
+	}
+
 	// Write record
 	n, err := recordio.Write(t.buf, record)
 	if err != nil {
@@ -353,6 +355,21 @@ func (t *Table) writeIndex() error {
 	}
 
 	return t.buf.Flush()
+}
+
+func (t *Table) All() iter.Seq[partition.Record] {
+	return func(yield func(partition.Record) bool) {
+		i := t.Iter()
+		for {
+			record, ok := i.Next()
+			if !ok {
+				return
+			}
+			if !yield(record) {
+				return
+			}
+		}
+	}
 }
 
 // Iterator provides sequential access to table records.

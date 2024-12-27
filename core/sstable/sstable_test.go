@@ -220,6 +220,128 @@ func TestTableErrors(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestBatchWriter_Add(t *testing.T) {
+	table, cleanup := setupTestingTable(t)
+	defer cleanup()
+
+	bw := table.BatchWriter()
+
+	t.Run("Add single valid record", func(t *testing.T) {
+		record := &partition.RecordImpl{
+			ID:   "test1",
+			Data: []byte("value1"),
+		}
+
+		err := bw.Add(record)
+		assert.NoError(t, err)
+	})
+
+	t.Run("Add nil record", func(t *testing.T) {
+		err := bw.Add(nil)
+		assert.ErrorIs(t, err, sstable.ErrInvalidKey)
+	})
+
+	t.Run("Add to closed table", func(t *testing.T) {
+		record := &partition.RecordImpl{
+			ID:   "test2",
+			Data: []byte("value2"),
+		}
+
+		err := table.Close()
+		assert.NoError(t, err)
+		err = bw.Add(record)
+		assert.ErrorIs(t, err, sstable.ErrTableClosed)
+	})
+}
+
+func TestBatchWriter_AddAll(t *testing.T) {
+	table, cleanup := setupTestingTable(t)
+	defer cleanup()
+
+	bw := table.BatchWriter()
+
+	t.Run("Add empty record slice", func(t *testing.T) {
+		err := bw.AddAll([]partition.Record{})
+		assert.NoError(t, err)
+	})
+
+	t.Run("Add slice with nil record", func(t *testing.T) {
+		records := []partition.Record{
+			&partition.RecordImpl{ID: "valid", Data: []byte("value")},
+			nil,
+		}
+
+		err := bw.AddAll(records)
+		assert.ErrorIs(t, err, sstable.ErrInvalidKey)
+	})
+
+	t.Run("Add multiple valid records", func(t *testing.T) {
+		records := []partition.Record{
+			&partition.RecordImpl{ID: "batch1", Data: []byte("value1")},
+			&partition.RecordImpl{ID: "batch2", Data: []byte("value2")},
+			&partition.RecordImpl{ID: "batch3", Data: []byte("value3")},
+		}
+
+		err := bw.AddAll(records)
+		assert.NoError(t, err)
+
+		err = bw.Flush()
+		assert.NoError(t, err)
+
+		// Verify all records were written
+		for _, record := range records {
+			retrieved, err := table.Get(record.GetID())
+			assert.NoError(t, err)
+			assert.Equal(t, retrieved.GetID(), record.GetID())
+		}
+	})
+}
+
+func TestBatchWriter_FlushAndClose(t *testing.T) {
+	table, cleanup := setupTestingTable(t)
+	defer cleanup()
+
+	bw := table.BatchWriter()
+
+	t.Run("Flush after adding records", func(t *testing.T) {
+		record := &partition.RecordImpl{
+			ID:   "flush-test",
+			Data: []byte("value"),
+		}
+		assert.NoError(t, bw.Add(record))
+
+		assert.NoError(t, bw.Flush())
+	})
+
+	t.Run("Close batch writer", func(t *testing.T) {
+		assert.NoError(t, bw.Close())
+	})
+}
+
+func TestTableAll(t *testing.T) {
+	table, cleanup := setupTestingTable(t)
+	defer cleanup()
+
+	// Write records in random order
+	records := []partition.Record{
+		newTestRecord("key3", []byte("value3")),
+		newTestRecord("key1", []byte("value1")),
+		newTestRecord("key2", []byte("value2")),
+	}
+
+	for _, r := range records {
+		assert.NoError(t, table.Put(r))
+	}
+
+	i := 0
+	expectedKeys := []string{"key1", "key2", "key3"}
+
+	for record := range table.All() {
+		assert.Equal(t, record.GetID(), expectedKeys[i])
+		i++
+	}
+}
+
 func setupBenchmarkTable(b *testing.B) (table *sstable.Table, cleanup func()) {
 	b.Helper()
 

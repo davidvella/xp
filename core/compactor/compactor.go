@@ -35,9 +35,6 @@ func Compact(w io.Writer, sequences ...loser.Sequence[partition.Record]) error {
 	)
 
 	for current := range lt.All() {
-		if current == nil {
-			continue
-		}
 		if !done {
 			last = current
 			done = true
