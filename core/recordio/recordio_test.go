@@ -29,10 +29,11 @@ func (w *mockWriter) Write(p []byte) (n int, err error) {
 
 func TestWrite(t *testing.T) {
 	tests := []struct {
-		name    string
-		writer  io.Writer
-		record  partition.Record
-		wantErr bool
+		name         string
+		writer       io.Writer
+		record       partition.Record
+		expectedSize int64
+		wantErr      bool
 	}{
 		{
 			name: "successful write",
@@ -40,7 +41,8 @@ func TestWrite(t *testing.T) {
 				Data:      []byte("test data"),
 				Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
-			wantErr: false,
+			expectedSize: 53,
+			wantErr:      false,
 		},
 		{
 			name: "successful write all data",
@@ -50,7 +52,8 @@ func TestWrite(t *testing.T) {
 				Data:         []byte("test data"),
 				Timestamp:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
-			wantErr: false,
+			expectedSize: 59,
+			wantErr:      false,
 		},
 		{
 			name: "empty data write",
@@ -58,14 +61,15 @@ func TestWrite(t *testing.T) {
 				Data:      []byte{},
 				Timestamp: time.Unix(0, 0),
 			},
-			wantErr: false,
+			expectedSize: 46,
+			wantErr:      false,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			buf := new(bytes.Buffer)
-			err := recordio.Write(buf, tt.record)
+			gotSize, err := recordio.Write(buf, tt.record)
 
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -73,6 +77,7 @@ func TestWrite(t *testing.T) {
 			}
 
 			assert.NoError(t, err)
+			assert.Equal(t, tt.expectedSize, gotSize)
 
 			// Verify the written data
 			records := recordio.ReadRecords(bytes.NewReader(buf.Bytes()))
@@ -89,6 +94,7 @@ func TestWriteHandleError(t *testing.T) {
 	tests := []struct {
 		name               string
 		writerCounterError int
+		expectedWritten    int64
 		expectedError      string
 	}{
 		{
@@ -105,41 +111,49 @@ func TestWriteHandleError(t *testing.T) {
 			name:               "error write 3",
 			writerCounterError: 3,
 			expectedError:      "error writing partition key: error writing string length: i failed to write",
+			expectedWritten:    8,
 		},
 		{
 			name:               "error write 4",
 			writerCounterError: 4,
 			expectedError:      "error writing partition key: error writing string content: i failed to write",
+			expectedWritten:    8,
 		},
 		{
 			name:               "error write 5",
 			writerCounterError: 5,
 			expectedError:      "error writing timestamp: i failed to write",
+			expectedWritten:    16,
 		},
 		{
 			name:               "error write 6",
 			writerCounterError: 6,
 			expectedError:      "error writing timezone: error writing string length: i failed to write",
+			expectedWritten:    24,
 		},
 		{
 			name:               "error write 7",
 			writerCounterError: 7,
 			expectedError:      "error writing timezone: error writing string content: i failed to write",
+			expectedWritten:    24,
 		},
 		{
 			name:               "error write 8",
 			writerCounterError: 8,
 			expectedError:      "error writing data: error writing bytes length: i failed to write",
+			expectedWritten:    35,
 		},
 		{
 			name:               "error write 9",
 			writerCounterError: 9,
 			expectedError:      "error writing data: error writing bytes content: i failed to write",
+			expectedWritten:    35,
 		},
 		{
 			name:               "error write 10",
 			writerCounterError: 10,
 			expectedError:      "error writing newline: i failed to write",
+			expectedWritten:    52,
 		},
 	}
 
@@ -154,8 +168,9 @@ func TestWriteHandleError(t *testing.T) {
 				Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			}
 
-			err := recordio.Write(&writer, record)
+			gotWritten, err := recordio.Write(&writer, record)
 
+			assert.Equal(t, tt.expectedWritten, gotWritten)
 			assert.EqualError(t, err, tt.expectedError)
 		})
 	}
@@ -232,7 +247,7 @@ func TestReadHandleError(t *testing.T) {
 			}
 
 			buf := new(bytes.Buffer)
-			err := recordio.Write(buf, record)
+			_, err := recordio.Write(buf, record)
 			assert.NoError(t, err)
 
 			reader := newMockReader(buf.Bytes(), tt.readCounterError)
@@ -254,7 +269,7 @@ func (r *mockReader) Read(p []byte) (n int, err error) {
 
 func TestNilRecords(t *testing.T) {
 	buf := new(bytes.Buffer)
-	err := recordio.Write(buf, nil)
+	_, err := recordio.Write(buf, nil)
 
 	assert.NoError(t, err)
 
@@ -277,7 +292,7 @@ func TestReadRecords(t *testing.T) {
 					Data:      []byte("test data"),
 					Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 				}
-				err := recordio.Write(buf, record)
+				_, err := recordio.Write(buf, record)
 				assert.NoError(t, err)
 				return buf
 			},
@@ -303,7 +318,7 @@ func TestReadRecords(t *testing.T) {
 					},
 				}
 				for _, r := range records {
-					err := recordio.Write(buf, r)
+					_, err := recordio.Write(buf, r)
 					assert.NoError(t, err)
 				}
 				return buf
