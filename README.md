@@ -29,6 +29,14 @@ stream windowing without requiring complex frameworks like Apache Beam or Apache
 go install github.com/davidvella/xp
 ```
 
+Usage
+-----
+A basic example:
+
+```go
+TBD
+```
+
 ## Contributing
 
 1. Fork the repository
