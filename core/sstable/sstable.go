@@ -71,7 +71,7 @@ type Table struct {
 	br     recordio.BinaryReader
 	opts   Options
 	closed bool
-	
+
 	memtable map[string]blockOffset
 
 	// Track the offset where data ends and memtable begins

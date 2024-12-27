@@ -52,7 +52,7 @@ func TestHandleInvalidFile(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 
 	p := tmpFile.Name()
-	_, err = tmpFile.Write([]byte("im a bad file"))
+	_, err = tmpFile.WriteString("im a bad file")
 	assert.NoError(t, err)
 	assert.NoError(t, tmpFile.Close())
 
