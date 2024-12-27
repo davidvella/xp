@@ -332,7 +332,7 @@ func TestProcessor_Recover(t *testing.T) {
 	}
 }
 
-// MockStorage implements storage.Storage interface.
+// MockStorage implements processor.Storage interface.
 type MockStorage struct {
 	createFunc  func(ctx context.Context, path string) (io.WriteCloser, error)
 	publishFunc func(ctx context.Context, path string) error

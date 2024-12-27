@@ -9,12 +9,21 @@ import (
 
 	"github.com/davidvella/xp/core/partition"
 	"github.com/davidvella/xp/core/priority"
-	"github.com/davidvella/xp/core/storage"
 	"github.com/davidvella/xp/core/wal"
 )
 
+// Storage defines the interface for the underlying storage system.
+type Storage interface {
+	// Create a new file/object for writing
+	Create(ctx context.Context, path string) (io.WriteCloser, error)
+	// Publish a file/object from pending to publishing
+	Publish(ctx context.Context, path string) error
+	// List files/objects from pending
+	List(ctx context.Context) ([]string, error)
+}
+
 type Processor struct {
-	storage     storage.Storage
+	storage     Storage
 	strategy    partition.Strategy
 	mu          sync.RWMutex
 	activeFiles *priority.Queue[string, activeWriter]
@@ -63,7 +72,7 @@ func (w *activeWriter) Close() error {
 	return w.writer.Close()
 }
 
-func New(storage storage.Storage, strategy partition.Strategy) *Processor {
+func New(storage Storage, strategy partition.Strategy) *Processor {
 	return &Processor{
 		storage:     storage,
 		strategy:    strategy,
