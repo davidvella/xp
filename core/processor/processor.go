@@ -22,7 +22,7 @@ type Processor struct {
 
 type activeWriter struct {
 	mu            *sync.RWMutex
-	writer        *wal.WAL
+	writer        *wal.Writer
 	information   partition.Information
 	name          string
 	lastWatermark time.Time
@@ -30,7 +30,7 @@ type activeWriter struct {
 
 func newActiveWriter(writer io.WriteCloser, record partition.Record, name string) activeWriter {
 	return activeWriter{
-		writer: wal.NewWAL(writer),
+		writer: wal.NewWriter(writer),
 		information: partition.Information{
 			PartitionKey:   record.GetPartitionKey(),
 			RecordCount:    0,

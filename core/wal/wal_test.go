@@ -70,7 +70,7 @@ func TestWAL_Write(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockWriteCloser{writeErr: tt.writeErr}
-			w := &WAL{w: mock}
+			w := &Writer{w: mock}
 
 			err := w.Write(tt.record)
 
@@ -107,7 +107,7 @@ func TestWAL_Close(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockWriteCloser{closeErr: tt.closeErr}
-			w := &WAL{w: mock}
+			w := &Writer{w: mock}
 
 			err := w.Close()
 
@@ -124,7 +124,7 @@ func TestWAL_Close(t *testing.T) {
 
 func TestWAL_Concurrent(t *testing.T) {
 	mock := &mockWriteCloser{}
-	w := &WAL{w: mock}
+	w := &Writer{w: mock}
 
 	// Test concurrent writes
 	const numGoroutines = 10

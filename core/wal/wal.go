@@ -9,16 +9,16 @@ import (
 	"github.com/davidvella/xp/core/recordio"
 )
 
-type WAL struct {
+type Writer struct {
 	mu sync.Mutex
 	w  io.WriteCloser
 }
 
-func NewWAL(w io.WriteCloser) *WAL {
-	return &WAL{w: w}
+func NewWriter(w io.WriteCloser) *Writer {
+	return &Writer{w: w}
 }
 
-func (w *WAL) Write(rec partition.Record) error {
+func (w *Writer) Write(rec partition.Record) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -29,7 +29,7 @@ func (w *WAL) Write(rec partition.Record) error {
 	return nil
 }
 
-func (w *WAL) Close() error {
+func (w *Writer) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
