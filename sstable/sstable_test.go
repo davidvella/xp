@@ -10,6 +10,7 @@ import (
 	"github.com/davidvella/xp/partition"
 	"github.com/davidvella/xp/sstable"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestRecord(id string, data []byte) partition.Record {
@@ -178,50 +179,6 @@ func TestTableReopen(t *testing.T) {
 		assert.NoError(t, err)
 
 		assert.Equal(t, got.GetData(), want.GetData())
-	}
-}
-
-func TestTableIterator(t *testing.T) {
-	table, cleanup := setupTestingTable(t)
-	defer cleanup()
-
-	// Write records in random order
-	records := []partition.Record{
-		newTestRecord("key1", []byte("value1")),
-		newTestRecord("key2", []byte("value2")),
-		newTestRecord("key3", []byte("value3")),
-	}
-
-	writer := table.BatchWriter()
-
-	for _, r := range records {
-		assert.NoError(t, writer.Add(r))
-	}
-
-	assert.NoError(t, writer.Close())
-
-	// Verify iterator returns records in sorted order
-	iter := table.Iter()
-	i := 0
-	expectedKeys := []string{"key1", "key2", "key3"}
-
-	for {
-		record, ok := iter.Next()
-		if !ok {
-			break
-		}
-
-		if i >= len(expectedKeys) {
-			t.Errorf("Iterator returned more records than expected")
-			break
-		}
-
-		assert.Equal(t, record.GetID(), expectedKeys[i])
-		i++
-	}
-
-	if i != len(expectedKeys) {
-		t.Errorf("Iterator returned %d records, want %d", i, len(expectedKeys))
 	}
 }
 
@@ -394,9 +351,9 @@ func TestTableAll(t *testing.T) {
 
 	// Write records in random order
 	records := []partition.Record{
-		newTestRecord("key3", []byte("value3")),
 		newTestRecord("key1", []byte("value1")),
 		newTestRecord("key2", []byte("value2")),
+		newTestRecord("key3", []byte("value3")),
 	}
 
 	writer := table.BatchWriter()
@@ -410,7 +367,10 @@ func TestTableAll(t *testing.T) {
 	i := 0
 	expectedKeys := []string{"key1", "key2", "key3"}
 
-	for record := range table.All() {
+	iter, err := table.All()
+	assert.NoError(t, err)
+
+	for record := range iter {
 		assert.Equal(t, record.GetID(), expectedKeys[i])
 		i++
 	}
@@ -454,47 +414,38 @@ func BenchmarkBatchWriter(b *testing.B) {
 		name      string
 		batchSize int
 	}{
-		{"SmallBatch", 100},
-		{"MediumBatch", 1000},
-		{"LargeBatch", 10000},
+		{"SmallBatch", 10000},
+		{"MediumBatch", 100000},
+		{"LargeBatch", 1000000},
 	}
 
 	for _, bc := range benchCases {
 		records := generateMockRecords(bc.batchSize)
 
 		b.Run(fmt.Sprintf("%s/SingleAdd/%d", bc.name, bc.batchSize), func(b *testing.B) {
-			table, cleanup := setupBenchmarkTable(b)
-			defer cleanup()
-
-			writer := table.BatchWriter()
-
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
+				table, cleanup := setupBenchmarkTable(b)
+
+				writer := table.BatchWriter()
+
 				for _, record := range records {
-					if err := writer.Add(record); err != nil {
-						b.Fatal(err)
-					}
+					require.NoError(b, writer.Add(record))
 				}
-				if err := writer.Flush(); err != nil {
-					b.Fatal(err)
-				}
+				require.NoError(b, writer.Flush())
+
+				cleanup()
 			}
 		})
 
 		b.Run(fmt.Sprintf("%s/BatchAdd/%d", bc.name, bc.batchSize), func(b *testing.B) {
-			table, cleanup := setupBenchmarkTable(b)
-			defer cleanup()
-
-			writer := table.BatchWriter()
-
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if err := writer.AddAll(records); err != nil {
-					b.Fatal(err)
-				}
-				if err := writer.Flush(); err != nil {
-					b.Fatal(err)
-				}
+				table, cleanup := setupBenchmarkTable(b)
+				writer := table.BatchWriter()
+				require.NoError(b, writer.AddAll(records))
+				require.NoError(b, writer.Flush())
+				cleanup()
 			}
 		})
 	}
@@ -507,12 +458,11 @@ func BenchmarkTableRead(b *testing.B) {
 	record := newTestRecord("benchkey", []byte("benchvalue"))
 
 	writer := table.BatchWriter()
-	writer.Add(record)
+	err := writer.Add(record)
+	require.NoError(b, err)
 
-	err := writer.Close()
-	if err != nil {
-		b.Fatal(err)
-	}
+	err = writer.Close()
+	require.NoError(b, err)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

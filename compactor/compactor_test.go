@@ -11,6 +11,7 @@ import (
 	"github.com/davidvella/xp/partition"
 	"github.com/davidvella/xp/sstable"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type List[E loser.Lesser[E]] struct {
@@ -105,7 +106,9 @@ func TestCompact(t *testing.T) {
 			assert.NoError(t, err)
 
 			var gotRecords []partition.Record
-			for record := range table.All() {
+			iter, err := table.All()
+			require.NoError(t, err)
+			for record := range iter {
 				gotRecords = append(gotRecords, record)
 			}
 			assert.ElementsMatch(t, tt.wantRecords, gotRecords)

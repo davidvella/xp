@@ -214,7 +214,7 @@ func (t *Table) Get(key string) (partition.Record, error) {
 	}
 
 	// Seek to record position
-	if _, err := t.buf.Seek(offset, 0); err != nil {
+	if _, err := t.buf.Seek(offset, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("sstable: seek error: %w", err)
 	}
 
@@ -244,14 +244,8 @@ func (t *Table) loadTable() error {
 		err error
 	)
 
-	_, err = t.buf.Seek(0, io.SeekStart)
-	if err != nil {
-		return err
-	}
-
 	if err := t.checkHeader(); err != nil {
 		return err
-
 	}
 
 	indexOffset, err := t.extractIndexOffset()
@@ -305,6 +299,10 @@ func (t *Table) checkHeader() error {
 		version int64
 		err     error
 	)
+	_, err = t.buf.Seek(0, io.SeekStart)
+	if err != nil {
+		return err
+	}
 	if header, err = t.br.ReadInt64(); err != nil {
 		return fmt.Errorf("sstable: invalid header: %w", err)
 	}
@@ -386,61 +384,12 @@ func (t *Table) writeIndex() error {
 	return t.buf.Flush()
 }
 
-func (t *Table) All() iter.Seq[partition.Record] {
-	return func(yield func(partition.Record) bool) {
-		i := t.Iter()
-		for {
-			record, ok := i.Next()
-			if !ok {
-				return
-			}
-			if !yield(record) {
-				return
-			}
-		}
-	}
-}
-
-// Iterator provides sequential access to table records.
-type Iterator struct {
-	table *Table
-	keys  []string
-	pos   int
-}
-
-// Iter returns an iterator over the table's records in key order.
-func (t *Table) Iter() *Iterator {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	keys := make([]string, 0, len(t.sparseIndex))
-	for _, k := range t.sparseIndex {
-		keys = append(keys, k.key)
-	}
-	sort.Strings(keys)
-
-	return &Iterator{
-		table: t,
-		keys:  keys,
-		pos:   0,
-	}
-}
-
-// Next returns the next record in the iteration.
-func (it *Iterator) Next() (partition.Record, bool) {
-	if it.pos >= len(it.keys) {
-		return nil, false
+func (t *Table) All() (iter.Seq[partition.Record], error) {
+	if err := t.checkHeader(); err != nil {
+		return nil, err
 	}
 
-	key := it.keys[it.pos]
-	it.pos++
-
-	record, err := it.table.Get(key)
-	if err != nil {
-		return nil, false
-	}
-
-	return record, true
+	return recordio.Seq(t.buf), nil
 }
 
 // BatchWriter creates a new BatchWriter instance.
@@ -477,11 +426,7 @@ func (bw *BatchWriter) AddAll(records []partition.Record) error {
 
 // Flush writes all buffered records to the table in sorted order.
 func (bw *BatchWriter) Flush() error {
-	if err := bw.table.writeIndex(); err != nil {
-		return fmt.Errorf("sstable: index write error: %w", err)
-	}
-
-	return bw.table.buf.Flush()
+	return bw.table.writeIndex()
 }
 
 // Close flushes any remaining records and releases resources.
