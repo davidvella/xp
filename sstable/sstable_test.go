@@ -55,8 +55,11 @@ func TestTableBasicOperationsReadWriteSeeker(t *testing.T) {
 
 	// Test single record write and read
 	record := newTestRecord("key1", []byte("value1"))
-	err = table.Put(record)
+	writer := table.BatchWriter()
+	err = writer.Add(record)
 	assert.NoError(t, err)
+
+	assert.NoError(t, writer.Close())
 
 	got, err := table.Get("key1")
 	assert.NoError(t, err)
@@ -94,8 +97,11 @@ func TestTableBasicOperations(t *testing.T) {
 
 	// Test single record write and read
 	record := newTestRecord("key1", []byte("value1"))
-	err := table.Put(record)
+	writer := table.BatchWriter()
+	err := writer.Add(record)
 	assert.NoError(t, err)
+
+	assert.NoError(t, writer.Close())
 
 	got, err := table.Get("key1")
 	assert.NoError(t, err)
@@ -114,9 +120,13 @@ func TestTableMultipleRecords(t *testing.T) {
 		newTestRecord("key3", []byte("value3")),
 	}
 
+	writer := table.BatchWriter()
+
 	for _, r := range records {
-		assert.NoError(t, table.Put(r))
+		assert.NoError(t, writer.Add(r))
 	}
+
+	assert.NoError(t, writer.Close())
 
 	// Read and verify all records
 	for _, want := range records {
@@ -142,9 +152,13 @@ func TestTableReopen(t *testing.T) {
 		newTestRecord("key2", []byte("value2")),
 	}
 
+	writer := table1.BatchWriter()
+
 	for _, r := range records {
-		assert.NoError(t, table1.Put(r))
+		assert.NoError(t, writer.Add(r))
 	}
+
+	assert.NoError(t, writer.Close())
 
 	err = table1.Close()
 	assert.NoError(t, err)
@@ -178,9 +192,13 @@ func TestTableIterator(t *testing.T) {
 		newTestRecord("key2", []byte("value2")),
 	}
 
+	writer := table.BatchWriter()
+
 	for _, r := range records {
-		assert.NoError(t, table.Put(r))
+		assert.NoError(t, writer.Add(r))
 	}
+
+	assert.NoError(t, writer.Close())
 
 	// Verify iterator returns records in sorted order
 	iter := table.Iter()
@@ -218,7 +236,11 @@ func TestTableReadOnly(t *testing.T) {
 	}
 
 	record := newTestRecord("key1", []byte("value1"))
-	assert.NoError(t, table1.Put(record))
+	writer := table1.BatchWriter()
+
+	assert.NoError(t, writer.Add(record))
+
+	assert.NoError(t, writer.Close())
 
 	assert.NoError(t, table1.Close())
 
@@ -239,15 +261,19 @@ func TestTableReadOnly(t *testing.T) {
 	assert.Equal(t, got.GetData(), record.GetData())
 
 	// Verify write fails
-	err = table2.Put(newTestRecord("key2", []byte("value2")))
-	assert.Error(t, err)
+	writer = table2.BatchWriter()
+
+	assert.Error(t, writer.Add(record))
 }
 
 func TestTableErrors(t *testing.T) {
 	table, cleanup := setupTestingTable(t)
 	defer cleanup()
+	writer := table.BatchWriter()
 
-	assert.Error(t, table.Put(nil))
+	assert.Error(t, writer.Add(nil))
+
+	assert.NoError(t, writer.Close())
 
 	// Test non-existent key
 	_, err := table.Get("nonexistent")
@@ -256,7 +282,9 @@ func TestTableErrors(t *testing.T) {
 	// Test closed table operations
 	assert.NoError(t, table.Close())
 
-	assert.Error(t, table.Put(newTestRecord("key", []byte("value"))))
+	writer = table.BatchWriter()
+
+	assert.Error(t, writer.Add(newTestRecord("key", []byte("value"))))
 
 	_, err = table.Get("key")
 	assert.Error(t, err)
@@ -371,9 +399,13 @@ func TestTableAll(t *testing.T) {
 		newTestRecord("key2", []byte("value2")),
 	}
 
+	writer := table.BatchWriter()
+
 	for _, r := range records {
-		assert.NoError(t, table.Put(r))
+		assert.NoError(t, writer.Add(r))
 	}
+
+	assert.NoError(t, writer.Close())
 
 	i := 0
 	expectedKeys := []string{"key1", "key2", "key3"}
@@ -468,29 +500,18 @@ func BenchmarkBatchWriter(b *testing.B) {
 	}
 }
 
-func BenchmarkTableWrite(b *testing.B) {
-	table, cleanup := setupBenchmarkTable(b)
-	defer cleanup()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		record := newTestRecord(
-			fmt.Sprintf("key%d", i),
-			[]byte(fmt.Sprintf("value%d", i)),
-		)
-		if err := table.Put(record); err != nil {
-			b.Errorf("Write failed: %v", err)
-		}
-	}
-}
-
 func BenchmarkTableRead(b *testing.B) {
 	table, cleanup := setupBenchmarkTable(b)
 	defer cleanup()
 
 	record := newTestRecord("benchkey", []byte("benchvalue"))
-	if err := table.Put(record); err != nil {
-		b.Fatalf("Failed to write test record: %v", err)
+
+	writer := table.BatchWriter()
+	writer.Add(record)
+
+	err := writer.Close()
+	if err != nil {
+		b.Fatal(err)
 	}
 
 	b.ResetTimer()
