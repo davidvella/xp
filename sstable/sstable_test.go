@@ -187,9 +187,9 @@ func TestTableIterator(t *testing.T) {
 
 	// Write records in random order
 	records := []partition.Record{
-		newTestRecord("key3", []byte("value3")),
 		newTestRecord("key1", []byte("value1")),
 		newTestRecord("key2", []byte("value2")),
+		newTestRecord("key3", []byte("value3")),
 	}
 
 	writer := table.BatchWriter()
@@ -337,7 +337,7 @@ func TestBatchWriter_AddAll(t *testing.T) {
 
 	t.Run("Add slice with nil record", func(t *testing.T) {
 		records := []partition.Record{
-			&partition.RecordImpl{ID: "valid", Data: []byte("value")},
+			&partition.RecordImpl{ID: "batch0", Data: []byte("value")},
 			nil,
 		}
 

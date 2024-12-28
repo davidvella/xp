@@ -37,10 +37,11 @@ var (
 
 // File format constants.
 const (
-	magicHeader    = int64(0x53535442) // "SSTB" in hex
-	magicFooter    = int64(0x454E4442) // "ENDB" in hex
-	formatVersion  = int64(1)
-	defaultBufSize = 52 * 1024
+	magicHeader      = int64(0x53535442) // "SSTB" in hex
+	magicFooter      = int64(0x454E4442) // "ENDB" in hex
+	formatVersion    = int64(1)
+	defaultBufSize   = 52 * 1024
+	defaultIndexSize = 1024
 )
 
 // Options configures the behavior of an SSTable.
@@ -71,7 +72,7 @@ type Table struct {
 	opts   Options
 	closed bool
 
-	sparseIndex map[string]sparseIndexEntry
+	sparseIndex []sparseIndexEntry
 
 	// Track the offset where data ends and sparseIndex begins
 	dataEnd int64
@@ -100,7 +101,7 @@ func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
 	t := &Table{
 		rw:          rw,
 		opts:        *opts,
-		sparseIndex: make(map[string]sparseIndexEntry),
+		sparseIndex: make([]sparseIndexEntry, 0, defaultIndexSize),
 		buf:         buf,
 		bw:          recordio.NewBinaryWriter(buf),
 		br:          recordio.NewBinaryReader(buf),
@@ -171,31 +172,6 @@ func (t *Table) Close() error {
 	return nil
 }
 
-// put adds or updates a record in the table.
-func (t *Table) put(record partition.Record) error {
-	if record == nil {
-		return ErrInvalidKey
-	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Seek to end of data section
-	if _, err := t.buf.Seek(t.dataEnd, io.SeekStart); err != nil {
-		return fmt.Errorf("sstable: seek error: %w", err)
-	}
-
-	if err := t.writeRecord(record); err != nil {
-		return err
-	}
-
-	if err := t.writeIndex(); err != nil {
-		return fmt.Errorf("sstable: sparseIndex write error: %w", err)
-	}
-
-	return t.buf.Flush()
-}
-
 func (t *Table) writeRecord(record partition.Record) error {
 	if t.closed {
 		return ErrTableClosed
@@ -212,10 +188,10 @@ func (t *Table) writeRecord(record partition.Record) error {
 	}
 
 	// Update sparseIndex
-	t.sparseIndex[record.GetID()] = sparseIndexEntry{
+	t.sparseIndex = append(t.sparseIndex, sparseIndexEntry{
 		key:    record.GetID(),
 		offset: t.dataEnd,
-	}
+	})
 
 	// Update data end position
 	t.dataEnd += n
@@ -232,13 +208,13 @@ func (t *Table) Get(key string) (partition.Record, error) {
 		return nil, ErrTableClosed
 	}
 
-	offset, ok := t.sparseIndex[key]
+	offset, ok := t.getKeyOffset(key)
 	if !ok {
 		return nil, ErrKeyNotFound
 	}
 
 	// Seek to record position
-	if _, err := t.buf.Seek(offset.offset, 0); err != nil {
+	if _, err := t.buf.Seek(offset, 0); err != nil {
 		return nil, fmt.Errorf("sstable: seek error: %w", err)
 	}
 
@@ -249,6 +225,17 @@ func (t *Table) Get(key string) (partition.Record, error) {
 	}
 
 	return record, nil
+}
+
+func (t *Table) getKeyOffset(key string) (int64, bool) {
+	// Binary search over sparse index
+	i := sort.Search(len(t.sparseIndex), func(i int) bool {
+		return t.sparseIndex[i].key >= key
+	})
+	if i < len(t.sparseIndex) && t.sparseIndex[i].key == key {
+		return t.sparseIndex[i].offset, true
+	}
+	return 0, false
 }
 
 // loadTable reads the table format and loads the sparseIndex.
@@ -272,7 +259,7 @@ func (t *Table) loadTable() error {
 		return err
 	}
 
-	err = t.readMemTable(indexOffset)
+	err = t.readSparseIndex(indexOffset)
 	if err != nil {
 		return err
 	}
@@ -280,7 +267,7 @@ func (t *Table) loadTable() error {
 	return nil
 }
 
-func (t *Table) readMemTable(indexOffset int64) error {
+func (t *Table) readSparseIndex(indexOffset int64) error {
 	// Read sparseIndex
 	t.dataEnd = indexOffset
 	if _, err := t.buf.Seek(indexOffset, io.SeekStart); err != nil {
@@ -292,7 +279,7 @@ func (t *Table) readMemTable(indexOffset int64) error {
 		return fmt.Errorf("sstable: invalid sparseIndex count: %w", err)
 	}
 
-	t.sparseIndex = make(map[string]sparseIndexEntry, count)
+	t.sparseIndex = make([]sparseIndexEntry, 0, count)
 	for i := int64(0); i < count; i++ {
 		key, err := t.br.ReadString()
 		if err != nil {
@@ -304,10 +291,10 @@ func (t *Table) readMemTable(indexOffset int64) error {
 			return fmt.Errorf("sstable: invalid sparseIndex offset: %w", err)
 		}
 
-		t.sparseIndex[key] = sparseIndexEntry{
+		t.sparseIndex = append(t.sparseIndex, sparseIndexEntry{
 			key:    key,
 			offset: offset,
-		}
+		})
 	}
 	return nil
 }
@@ -427,8 +414,8 @@ func (t *Table) Iter() *Iterator {
 	defer t.mu.RUnlock()
 
 	keys := make([]string, 0, len(t.sparseIndex))
-	for k := range t.sparseIndex {
-		keys = append(keys, k)
+	for _, k := range t.sparseIndex {
+		keys = append(keys, k.key)
 	}
 	sort.Strings(keys)
 
