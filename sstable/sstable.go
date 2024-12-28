@@ -79,6 +79,10 @@ type Table struct {
 
 // Open creates a new SSTable using the provided ReadWriteSeeker.
 func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
+	if rw == nil {
+		return nil, errors.New("sstable: ReadWriteSeeker cannot be nil")
+	}
+
 	if opts == nil {
 		opts = &Options{}
 	}

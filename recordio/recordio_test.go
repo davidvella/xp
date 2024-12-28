@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-var errWrite = errors.New("i failed to write")
+var errWrite = errors.New("its a me errorio")
 
 type mockWriter struct {
 	errorCounter int
@@ -100,59 +100,59 @@ func TestWriteHandleError(t *testing.T) {
 		{
 			name:               "error write 1",
 			writerCounterError: 1,
-			expectedError:      "error writing ID: error writing string length: i failed to write",
+			expectedError:      "error writing ID: error writing string length: its a me errorio",
 		},
 		{
 			name:               "error write 2",
 			writerCounterError: 2,
-			expectedError:      "error writing ID: error writing string content: i failed to write",
+			expectedError:      "error writing ID: error writing string content: its a me errorio",
 		},
 		{
 			name:               "error write 3",
 			writerCounterError: 3,
-			expectedError:      "error writing partition key: error writing string length: i failed to write",
+			expectedError:      "error writing partition key: error writing string length: its a me errorio",
 			expectedWritten:    8,
 		},
 		{
 			name:               "error write 4",
 			writerCounterError: 4,
-			expectedError:      "error writing partition key: error writing string content: i failed to write",
+			expectedError:      "error writing partition key: error writing string content: its a me errorio",
 			expectedWritten:    8,
 		},
 		{
 			name:               "error write 5",
 			writerCounterError: 5,
-			expectedError:      "error writing timestamp: i failed to write",
+			expectedError:      "error writing timestamp: its a me errorio",
 			expectedWritten:    16,
 		},
 		{
 			name:               "error write 6",
 			writerCounterError: 6,
-			expectedError:      "error writing timezone: error writing string length: i failed to write",
+			expectedError:      "error writing timezone: error writing string length: its a me errorio",
 			expectedWritten:    24,
 		},
 		{
 			name:               "error write 7",
 			writerCounterError: 7,
-			expectedError:      "error writing timezone: error writing string content: i failed to write",
+			expectedError:      "error writing timezone: error writing string content: its a me errorio",
 			expectedWritten:    24,
 		},
 		{
 			name:               "error write 8",
 			writerCounterError: 8,
-			expectedError:      "error writing data: error writing bytes length: i failed to write",
+			expectedError:      "error writing data: error writing bytes length: its a me errorio",
 			expectedWritten:    35,
 		},
 		{
 			name:               "error write 9",
 			writerCounterError: 9,
-			expectedError:      "error writing data: error writing bytes content: i failed to write",
+			expectedError:      "error writing data: error writing bytes content: its a me errorio",
 			expectedWritten:    35,
 		},
 		{
 			name:               "error write 10",
 			writerCounterError: 10,
-			expectedError:      "error writing newline: i failed to write",
+			expectedError:      "error writing newline: its a me errorio",
 			expectedWritten:    52,
 		},
 	}

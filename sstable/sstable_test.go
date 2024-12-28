@@ -24,7 +24,7 @@ func newTestRecord(id string, data []byte) partition.Record {
 func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
 	t.Helper()
 
-	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "sstable-test-*.sst")
 	assert.NoError(t, err)
 
 	table, err = sstable.OpenFile(tmpFile.Name(), nil)
@@ -42,7 +42,7 @@ func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
 }
 
 func TestTableBasicOperationsReadWriteSeeker(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "sstable-test-*.sst")
 	assert.NoError(t, err)
 
 	table, err := sstable.Open(tmpFile, nil)
@@ -70,7 +70,7 @@ func TestHandleErrorWhenDirectoryNotExists(t *testing.T) {
 }
 
 func TestHandleInvalidFile(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "sstable-test-*.sst")
 	assert.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 
@@ -387,7 +387,7 @@ func TestTableAll(t *testing.T) {
 func setupBenchmarkTable(b *testing.B) (table *sstable.Table, cleanup func()) {
 	b.Helper()
 
-	tmpFile, err := os.CreateTemp("", "sstable-bench-*.sst")
+	tmpFile, err := os.CreateTemp(b.TempDir(), "sstable-bench-*.sst")
 	if err != nil {
 		b.Fatal(err)
 	}
