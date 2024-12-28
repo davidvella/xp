@@ -1,6 +1,7 @@
 package recordio
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -14,6 +15,9 @@ import (
 var (
 	uint64Size = int64(binary.Size(uint64(0)))
 	int64Size  = int64(binary.Size(int64(0)))
+	// MagicBytes Magic bytes to identify valid recordio files (REC).
+	MagicBytes           = []byte{0x52, 0x45, 0x43}
+	ErrInvalidMagicBytes = errors.New("invalid magic bytes - not a valid recordio file")
 )
 
 // BinaryWriter handles writing binary data with error handling.
@@ -112,10 +116,20 @@ func Write(w io.Writer, data partition.Record) (int64, error) {
 		return 0, nil
 	}
 
-	bw := NewBinaryWriter(w)
-	var totalBytes int64
+	var (
+		totalBytes int64
+		n          int64
+	)
 
-	n, err := bw.WriteString(data.GetID())
+	mn, err := w.Write(MagicBytes)
+	if err != nil {
+		return int64(mn), fmt.Errorf("failed to write magic bytes: %w", err)
+	}
+	totalBytes += int64(mn)
+
+	bw := NewBinaryWriter(w)
+
+	n, err = bw.WriteString(data.GetID())
 	if err != nil {
 		return totalBytes, fmt.Errorf("error writing ID: %w", err)
 	}
@@ -145,17 +159,20 @@ func Write(w io.Writer, data partition.Record) (int64, error) {
 	}
 	totalBytes += n
 
-	bN, err := w.Write([]byte{'\n'})
-	if err != nil {
-		return totalBytes, fmt.Errorf("error writing newline: %w", err)
-	}
-	totalBytes += int64(bN)
-
 	return totalBytes, nil
 }
 
 // ReadRecord reads a single record from the reader.
 func ReadRecord(r io.Reader) (partition.Record, error) {
+
+	magicBytes := make([]byte, len(MagicBytes))
+	if _, err := io.ReadFull(r, magicBytes); err != nil {
+		return nil, fmt.Errorf("failed to read magic bytes: %w", err)
+	}
+	if !bytes.Equal(magicBytes, MagicBytes) {
+		return nil, ErrInvalidMagicBytes
+	}
+
 	br := NewBinaryReader(r)
 
 	id, err := br.ReadString()
@@ -191,11 +208,6 @@ func ReadRecord(r io.Reader) (partition.Record, error) {
 	data, err := br.ReadBytes()
 	if err != nil {
 		return nil, fmt.Errorf("error reading data: %w", err)
-	}
-
-	nl := make([]byte, 1)
-	if _, err := io.ReadFull(r, nl); err != nil {
-		return nil, fmt.Errorf("error reading newline: %w", err)
 	}
 
 	return partition.RecordImpl{

@@ -3,6 +3,7 @@ package wal
 import (
 	"fmt"
 	"io"
+	"iter"
 	"sync"
 
 	"github.com/davidvella/xp/partition"
@@ -34,4 +35,20 @@ func (w *Writer) Close() error {
 	defer w.mu.Unlock()
 
 	return w.w.Close()
+}
+
+type Reader struct {
+	r io.ReadCloser
+}
+
+func NewReader(r io.ReadCloser) *Reader {
+	return &Reader{r: r}
+}
+
+func (r *Reader) All() iter.Seq[partition.Record] {
+	return recordio.Seq(r.r)
+}
+
+func (r *Reader) Close() error {
+	return r.r.Close()
 }

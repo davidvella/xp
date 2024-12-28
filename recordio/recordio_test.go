@@ -41,7 +41,7 @@ func TestWrite(t *testing.T) {
 				Data:      []byte("test data"),
 				Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
-			expectedSize: 53,
+			expectedSize: 55,
 			wantErr:      false,
 		},
 		{
@@ -52,7 +52,7 @@ func TestWrite(t *testing.T) {
 				Data:         []byte("test data"),
 				Timestamp:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			},
-			expectedSize: 59,
+			expectedSize: 61,
 			wantErr:      false,
 		},
 		{
@@ -61,7 +61,7 @@ func TestWrite(t *testing.T) {
 				Data:      []byte{},
 				Timestamp: time.Unix(0, 0),
 			},
-			expectedSize: 46,
+			expectedSize: 48,
 			wantErr:      false,
 		},
 	}
@@ -98,62 +98,63 @@ func TestWriteHandleError(t *testing.T) {
 		expectedError      string
 	}{
 		{
-			name:               "error write 1",
+			name:               "Magic Bytes",
 			writerCounterError: 1,
-			expectedError:      "error writing ID: error writing string length: its a me errorio",
+			expectedError:      "failed to write magic bytes: its a me errorio",
 		},
 		{
-			name:               "error write 2",
+			name:               "ID Length",
 			writerCounterError: 2,
-			expectedError:      "error writing ID: error writing string content: its a me errorio",
+			expectedError:      "error writing ID: error writing string length: its a me errorio",
+			expectedWritten:    3,
 		},
 		{
-			name:               "error write 3",
+			name:               "ID Content",
 			writerCounterError: 3,
-			expectedError:      "error writing partition key: error writing string length: its a me errorio",
-			expectedWritten:    8,
+			expectedError:      "error writing ID: error writing string content: its a me errorio",
+			expectedWritten:    3,
 		},
 		{
-			name:               "error write 4",
+			name:               "Partition Key Length",
 			writerCounterError: 4,
-			expectedError:      "error writing partition key: error writing string content: its a me errorio",
-			expectedWritten:    8,
+			expectedError:      "error writing partition key: error writing string length: its a me errorio",
+			expectedWritten:    11,
 		},
 		{
-			name:               "error write 5",
+			name:               "Partition Key Data",
 			writerCounterError: 5,
-			expectedError:      "error writing timestamp: its a me errorio",
-			expectedWritten:    16,
+			expectedError:      "error writing partition key: error writing string content: its a me errorio",
+			expectedWritten:    11,
 		},
 		{
-			name:               "error write 6",
+			name:               "Timestamp",
 			writerCounterError: 6,
-			expectedError:      "error writing timezone: error writing string length: its a me errorio",
-			expectedWritten:    24,
+			expectedError:      "error writing timestamp: its a me errorio",
+			expectedWritten:    19,
 		},
 		{
-			name:               "error write 7",
+			name:               "Timestamp loc length",
 			writerCounterError: 7,
-			expectedError:      "error writing timezone: error writing string content: its a me errorio",
-			expectedWritten:    24,
+			expectedError:      "error writing timezone: error writing string length: its a me errorio",
+			expectedWritten:    27,
 		},
 		{
-			name:               "error write 8",
+			name:               "Timestamp loc",
 			writerCounterError: 8,
-			expectedError:      "error writing data: error writing bytes length: its a me errorio",
-			expectedWritten:    35,
+			expectedError:      "error writing timezone: error writing string content: its a me errorio",
+			expectedWritten:    27,
 		},
 		{
-			name:               "error write 9",
+			name:               "Data Length",
 			writerCounterError: 9,
-			expectedError:      "error writing data: error writing bytes content: its a me errorio",
-			expectedWritten:    35,
+			expectedError:      "error writing data: error writing bytes length: its a me errorio",
+			expectedWritten:    38,
 		},
 		{
-			name:               "error write 10",
+			name:               "Data content",
 			writerCounterError: 10,
-			expectedError:      "error writing newline: its a me errorio",
-			expectedWritten:    52,
+			expectedError:      "error writing data: error writing bytes content: its a me errorio",
+			expectedWritten:    38,
 		},
 	}
 
@@ -198,52 +199,64 @@ func TestReadHandleError(t *testing.T) {
 		expectedError    string
 	}{
 		{
-			name:             "error read 1",
+			name:             "Error Read Magic Bytes",
 			readCounterError: 1,
+			expectedError:    "failed to read magic bytes: i failed to read",
+		},
+		{
+			name:             "ID Length",
+			readCounterError: 2,
 			expectedError:    "error reading ID: error reading string length: i failed to read",
 		},
 		{
-			name:             "error read 2",
-			readCounterError: 2,
+			name:             "ID string",
+			readCounterError: 3,
+			expectedError:    "error reading ID: error reading string content: i failed to read",
+		},
+		{
+			name:             "Partition Key length",
+			readCounterError: 4,
 			expectedError:    "error reading partition key: error reading string length: i failed to read",
 		},
 		{
-			name:             "error read 3",
-			readCounterError: 3,
+			name:             "Partition Key length",
+			readCounterError: 5,
+			expectedError:    "error reading partition key: error reading string content: i failed to read",
+		},
+		{
+			name:             "Timestamp",
+			readCounterError: 6,
 			expectedError:    "error reading timestamp: i failed to read",
 		},
 		{
-			name:             "error read 4",
-			readCounterError: 4,
+			name:             "Timestamp LOC length",
+			readCounterError: 7,
 			expectedError:    "error reading timezone: error reading string length: i failed to read",
 		},
 		{
-			name:             "error read 5",
-			readCounterError: 5,
+			name:             "Timestamp LOC",
+			readCounterError: 8,
 			expectedError:    "error reading timezone: error reading string content: i failed to read",
 		},
 		{
-			name:             "error read 6",
-			readCounterError: 6,
+			name:             "Data length",
+			readCounterError: 9,
 			expectedError:    "error reading data: error reading bytes length: i failed to read",
 		},
 		{
-			name:             "error read 7",
-			readCounterError: 7,
+			name:             "Data content",
+			readCounterError: 10,
 			expectedError:    "error reading data: error reading bytes content: i failed to read",
-		},
-		{
-			name:             "error read 8",
-			readCounterError: 8,
-			expectedError:    "error reading newline: i failed to read",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			record := &partition.RecordImpl{
-				Data:      []byte("test data"),
-				Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+				ID:           "its a me id",
+				Data:         []byte("test data"),
+				PartitionKey: "key",
+				Timestamp:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
 			}
 
 			buf := new(bytes.Buffer)

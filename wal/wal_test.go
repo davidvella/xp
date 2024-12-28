@@ -1,4 +1,4 @@
-package wal
+package wal_test
 
 import (
 	"bytes"
@@ -9,7 +9,9 @@ import (
 
 	"github.com/davidvella/xp/partition"
 	"github.com/davidvella/xp/recordio"
+	"github.com/davidvella/xp/wal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // mockWriteCloser implements io.WriteCloser for testing.
@@ -57,7 +59,7 @@ func TestWAL_Write(t *testing.T) {
 			record:     partition.RecordImpl{Data: []byte("test data")},
 			writeErr:   errors.New("write failed"),
 			wantErr:    true,
-			wantErrMsg: "failed to write record: error writing ID: error writing string length: write failed",
+			wantErrMsg: "failed to write record: failed to write magic bytes: write failed",
 		},
 		{
 			name:     "empty record",
@@ -70,7 +72,7 @@ func TestWAL_Write(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockWriteCloser{writeErr: tt.writeErr}
-			w := &Writer{w: mock}
+			w := wal.NewWriter(mock)
 
 			err := w.Write(tt.record)
 
@@ -107,7 +109,7 @@ func TestWAL_Close(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockWriteCloser{closeErr: tt.closeErr}
-			w := &Writer{w: mock}
+			w := wal.NewWriter(mock)
 
 			err := w.Close()
 
@@ -124,7 +126,7 @@ func TestWAL_Close(t *testing.T) {
 
 func TestWAL_Concurrent(t *testing.T) {
 	mock := &mockWriteCloser{}
-	w := &Writer{w: mock}
+	w := wal.NewWriter(mock)
 
 	// Test concurrent writes
 	const numGoroutines = 10
@@ -146,10 +148,87 @@ func TestWAL_Concurrent(t *testing.T) {
 
 	wg.Wait()
 
-	assert.Equal(t, numGoroutines*47, len(mock.written))
+	assert.Equal(t, numGoroutines*49, len(mock.written))
 
 	r := bytes.NewReader(mock.written)
 	got := recordio.ReadRecords(r)
 
 	assert.Len(t, got, numGoroutines)
+}
+
+type mockReadCloser struct {
+	*bytes.Reader
+	closed bool
+}
+
+func newMockReadCloser(data []byte) *mockReadCloser {
+	return &mockReadCloser{
+		Reader: bytes.NewReader(data),
+	}
+}
+
+func (m *mockReadCloser) Close() error {
+	m.closed = true
+	return nil
+}
+
+func TestReader(t *testing.T) {
+	t.Run("reads all records successfully", func(t *testing.T) {
+		records := []partition.Record{
+			&partition.RecordImpl{Data: []byte("record1")},
+			&partition.RecordImpl{Data: []byte("record2")},
+			&partition.RecordImpl{Data: []byte("record3")},
+		}
+
+		var buf bytes.Buffer
+		for _, rec := range records {
+			_, err := recordio.Write(&buf, rec)
+			require.NoError(t, err)
+		}
+
+		mock := newMockReadCloser(buf.Bytes())
+		reader := wal.NewReader(mock)
+
+		var result []partition.Record
+		for rec := range reader.All() {
+			result = append(result, rec)
+		}
+
+		assert.Equal(t, len(records), len(result))
+		for i := range records {
+			assert.Equal(t, records[i].GetData(), result[i].GetData())
+		}
+	})
+
+	t.Run("handles empty input", func(t *testing.T) {
+		mock := newMockReadCloser([]byte{})
+		reader := wal.NewReader(mock)
+
+		count := 0
+		for range reader.All() {
+			count++
+		}
+
+		assert.Equal(t, 0, count)
+	})
+
+	t.Run("closes underlying reader", func(t *testing.T) {
+		mock := newMockReadCloser([]byte{})
+		reader := wal.NewReader(mock)
+
+		err := reader.Close()
+		require.NoError(t, err)
+		assert.True(t, mock.closed)
+	})
+
+	t.Run("handles corrupted data", func(t *testing.T) {
+		mock := newMockReadCloser([]byte("corrupted data"))
+		reader := wal.NewReader(mock)
+
+		count := 0
+		for range reader.All() {
+			count++
+		}
+		assert.Equal(t, 0, count)
+	})
 }
