@@ -84,11 +84,11 @@ func (br BinaryReader) ReadString() (string, error) {
 		return "", fmt.Errorf("error reading string length: %w", err)
 	}
 
-	bytes := make([]byte, length)
-	if _, err := io.ReadFull(br.r, bytes); err != nil {
+	b := make([]byte, length)
+	if _, err := io.ReadFull(br.r, b); err != nil {
 		return "", fmt.Errorf("error reading string content: %w", err)
 	}
-	return string(bytes), nil
+	return string(b), nil
 }
 
 func (br BinaryReader) ReadInt64() (int64, error) {
@@ -177,9 +177,6 @@ func ReadRecord(r io.Reader) (partition.Record, error) {
 
 	id, err := br.ReadString()
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return nil, err
-		}
 		return nil, fmt.Errorf("error reading ID: %w", err)
 	}
 
@@ -198,10 +195,8 @@ func ReadRecord(r io.Reader) (partition.Record, error) {
 		return nil, fmt.Errorf("error reading timezone: %w", err)
 	}
 
-	loc, err := time.LoadLocation(timezone)
-	if err != nil {
-		return nil, fmt.Errorf("error loading timezone: %w", err)
-	}
+	//nolint:errcheck // Can't set an invalid timezone
+	loc, _ := time.LoadLocation(timezone)
 
 	timestamp := time.Unix(0, unixNano).In(loc)
 
