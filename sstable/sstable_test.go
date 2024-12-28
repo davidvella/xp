@@ -27,7 +27,7 @@ func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
 	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
 	assert.NoError(t, err)
 
-	table, err = sstable.Open(tmpFile.Name(), nil)
+	table, err = sstable.OpenFile(tmpFile.Name(), nil)
 	if err != nil {
 		os.Remove(tmpFile.Name())
 		t.Fatal(err)
@@ -41,8 +41,31 @@ func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
 	return table, cleanup
 }
 
+func TestTableBasicOperationsReadWriteSeeker(t *testing.T) {
+	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	assert.NoError(t, err)
+
+	table, err := sstable.Open(tmpFile, nil)
+	assert.NoError(t, err)
+
+	defer func(table *sstable.Table) {
+		err := table.Close()
+		assert.NoError(t, err)
+	}(table)
+
+	// Test single record write and read
+	record := newTestRecord("key1", []byte("value1"))
+	err = table.Put(record)
+	assert.NoError(t, err)
+
+	got, err := table.Get("key1")
+	assert.NoError(t, err)
+
+	assert.Equal(t, got.GetData(), record.GetData())
+}
+
 func TestHandleErrorWhenDirectoryNotExists(t *testing.T) {
-	_, err := sstable.Open("/imabadpath", nil)
+	_, err := sstable.OpenFile("/imabadpath", nil)
 	assert.Error(t, err)
 }
 
@@ -56,7 +79,7 @@ func TestHandleInvalidFile(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NoError(t, tmpFile.Close())
 
-	_, err = sstable.Open(p, nil)
+	_, err = sstable.OpenFile(p, nil)
 	assert.Error(t, err)
 }
 
@@ -109,7 +132,7 @@ func TestTableReopen(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.sst")
 
 	// Write records
-	table1, err := sstable.Open(path, nil)
+	table1, err := sstable.OpenFile(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -127,7 +150,7 @@ func TestTableReopen(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Reopen and verify
-	table2, err := sstable.Open(path, nil)
+	table2, err := sstable.OpenFile(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to reopen table: %v", err)
 	}
@@ -189,7 +212,7 @@ func TestTableReadOnly(t *testing.T) {
 	path := filepath.Join(tmpDir, "test.sst")
 
 	// Write records
-	table1, err := sstable.Open(path, nil)
+	table1, err := sstable.OpenFile(path, nil)
 	if err != nil {
 		t.Fatalf("Failed to create table: %v", err)
 	}
@@ -200,7 +223,7 @@ func TestTableReadOnly(t *testing.T) {
 	assert.NoError(t, table1.Close())
 
 	// Reopen in read-only mode
-	table2, err := sstable.Open(path, &sstable.Options{ReadOnly: true})
+	table2, err := sstable.OpenFile(path, &sstable.Options{ReadOnly: true})
 	if err != nil {
 		t.Fatalf("Failed to reopen table: %v", err)
 	}
@@ -369,7 +392,7 @@ func setupBenchmarkTable(b *testing.B) (table *sstable.Table, cleanup func()) {
 		b.Fatal(err)
 	}
 
-	table, err = sstable.Open(tmpFile.Name(), nil)
+	table, err = sstable.OpenFile(tmpFile.Name(), nil)
 	if err != nil {
 		os.Remove(tmpFile.Name())
 		b.Fatal(err)

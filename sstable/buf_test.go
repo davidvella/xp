@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupTestFile(t *testing.T) (f sstable.ReadWriteSeeker, cleanup func()) {
+func setupTestFile(t *testing.T) (f io.ReadWriteSeeker, cleanup func()) {
 	t.Helper()
 
 	tmpFile, err := os.CreateTemp("", "test-*.sst")
@@ -162,68 +162,6 @@ func TestSeek(t *testing.T) {
 				assert.Equal(t, len(tc.expRead), n)
 				assert.Equal(t, tc.expRead, data)
 			}
-		})
-	}
-}
-
-func TestReadAt(t *testing.T) {
-	tests := []struct {
-		name     string
-		size     int
-		write    []byte
-		offset   int64
-		readLen  int
-		expData  []byte
-		expLen   int
-		expError error
-	}{
-		{
-			name:    "read at start",
-			size:    8,
-			write:   []byte("hello world"),
-			offset:  0,
-			readLen: 5,
-			expData: []byte("hello"),
-			expLen:  5,
-		},
-		{
-			name:    "read at middle",
-			size:    8,
-			write:   []byte("hello world"),
-			offset:  6,
-			readLen: 5,
-			expData: []byte("world"),
-			expLen:  5,
-		},
-		{
-			name:     "read at with offset beyond size",
-			size:     8,
-			write:    []byte("hello"),
-			offset:   10,
-			readLen:  5,
-			expData:  []byte{0, 0, 0, 0, 0},
-			expError: io.EOF,
-			expLen:   0,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			b, cleanup := setupTestFile(t)
-			defer cleanup()
-			rws := sstable.NewReadWriteSeeker(b, tc.size)
-			_, err := rws.Write(tc.write)
-			assert.NoError(t, err)
-
-			data := make([]byte, tc.readLen)
-			n, err := rws.ReadAt(data, tc.offset)
-			if tc.expError != nil {
-				assert.ErrorIs(t, err, tc.expError)
-			} else {
-				assert.NoError(t, err)
-			}
-			assert.Equal(t, tc.expLen, n)
-			assert.Equal(t, tc.expData, data)
 		})
 	}
 }
