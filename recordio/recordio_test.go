@@ -291,6 +291,16 @@ func TestNilRecords(t *testing.T) {
 	assert.Len(t, records, 0)
 }
 
+func TestInvalidMagicBytesRecords(t *testing.T) {
+	buf := new(bytes.Buffer)
+	_, err := buf.Write([]byte{0x52, 0x45, 0x42})
+	assert.NoError(t, err)
+
+	// Verify the written data
+	_, err = recordio.ReadRecord(bytes.NewReader(buf.Bytes()))
+	assert.ErrorIs(t, err, recordio.ErrInvalidMagicBytes)
+}
+
 func TestReadRecords(t *testing.T) {
 	tests := []struct {
 		name  string
