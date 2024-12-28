@@ -102,6 +102,10 @@ func TestTableBasicOperations(t *testing.T) {
 	err := writer.Add(record)
 	assert.NoError(t, err)
 
+	record2 := newTestRecord("key0", []byte("value1"))
+	err = writer.Add(record2)
+	assert.ErrorIs(t, err, sstable.ErrWriteError)
+
 	assert.NoError(t, writer.Close())
 
 	got, err := table.Get("key1")

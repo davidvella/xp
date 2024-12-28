@@ -33,6 +33,7 @@ var (
 	ErrKeyNotFound    = errors.New("sstable: key not found")
 	ErrCorruptedTable = errors.New("sstable: corrupted table data")
 	ErrReadOnlyTable  = errors.New("sstable: cannot write to read-only table")
+	ErrWriteError     = errors.New("sstable: records must be written in sorted order")
 )
 
 // File format constants.
@@ -179,6 +180,14 @@ func (t *Table) writeRecord(record partition.Record) error {
 
 	if t.opts.ReadOnly {
 		return ErrReadOnlyTable
+	}
+
+	// Ensure records are written in sorted order.
+	if len(t.sparseIndex) > 0 {
+		lastKey := t.sparseIndex[len(t.sparseIndex)-1].key
+		if record.GetID() < lastKey {
+			return ErrWriteError
+		}
 	}
 
 	// Write record
