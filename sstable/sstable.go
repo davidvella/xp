@@ -55,10 +55,10 @@ type Options struct {
 	BufferSize int
 }
 
-// blockOffset stores the location of a record in the file.
-type blockOffset struct {
+// sparseIndexEntry represents an entry in the sparse index.
+type sparseIndexEntry struct {
+	key    string
 	offset int64
-	size   int64
 }
 
 // Table represents a sorted string table.
@@ -71,7 +71,7 @@ type Table struct {
 	opts   Options
 	closed bool
 
-	memtable map[string]blockOffset
+	memtable map[string]sparseIndexEntry
 
 	// Track the offset where data ends and memtable begins
 	dataEnd int64
@@ -100,7 +100,7 @@ func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
 	t := &Table{
 		rw:       rw,
 		opts:     *opts,
-		memtable: make(map[string]blockOffset),
+		memtable: make(map[string]sparseIndexEntry),
 		buf:      buf,
 		bw:       recordio.NewBinaryWriter(buf),
 		br:       recordio.NewBinaryReader(buf),
@@ -213,9 +213,9 @@ func (t *Table) writeRecord(record partition.Record) error {
 	}
 
 	// Update memtable
-	t.memtable[record.GetID()] = blockOffset{
+	t.memtable[record.GetID()] = sparseIndexEntry{
+		key:    record.GetID(),
 		offset: t.dataEnd,
-		size:   n,
 	}
 
 	// Update data end position
@@ -265,6 +265,7 @@ func (t *Table) loadTable() error {
 
 	if err := t.checkHeader(); err != nil {
 		return err
+
 	}
 
 	indexOffset, err := t.extractIndexOffset()
@@ -292,7 +293,7 @@ func (t *Table) readMemTable(indexOffset int64) error {
 		return fmt.Errorf("sstable: invalid memtable count: %w", err)
 	}
 
-	t.memtable = make(map[string]blockOffset, count)
+	t.memtable = make(map[string]sparseIndexEntry, count)
 	for i := int64(0); i < count; i++ {
 		key, err := t.br.ReadString()
 		if err != nil {
@@ -304,14 +305,9 @@ func (t *Table) readMemTable(indexOffset int64) error {
 			return fmt.Errorf("sstable: invalid memtable offset: %w", err)
 		}
 
-		size, err := t.br.ReadInt64()
-		if err != nil {
-			return fmt.Errorf("sstable: invalid memtable size: %w", err)
-		}
-
-		t.memtable[key] = blockOffset{
+		t.memtable[key] = sparseIndexEntry{
+			key:    key,
 			offset: offset,
-			size:   size,
 		}
 	}
 	return nil
@@ -384,14 +380,11 @@ func (t *Table) writeIndex() error {
 		return err
 	}
 
-	for k, offset := range t.memtable {
-		if _, err := t.bw.WriteString(k); err != nil {
+	for _, v := range t.memtable {
+		if _, err := t.bw.WriteString(v.key); err != nil {
 			return err
 		}
-		if _, err := t.bw.WriteInt64(offset.offset); err != nil {
-			return err
-		}
-		if _, err := t.bw.WriteInt64(offset.size); err != nil {
+		if _, err := t.bw.WriteInt64(v.offset); err != nil {
 			return err
 		}
 	}
