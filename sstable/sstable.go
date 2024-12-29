@@ -34,6 +34,7 @@ var (
 	ErrCorruptedTable = errors.New("sstable: corrupted table data")
 	ErrReadOnlyTable  = errors.New("sstable: cannot write to read-only table")
 	ErrWriteError     = errors.New("sstable: records must be written in sorted order")
+	footerSize        = int64(binary.Size(magicHeader) + binary.Size(formatVersion))
 )
 
 // File format constants.
@@ -118,7 +119,7 @@ func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
 		if err := t.writeHeader(); err != nil {
 			return nil, errors.Join(err, t.Close())
 		}
-		t.dataEnd = int64(binary.Size(magicHeader) + binary.Size(formatVersion))
+		t.dataEnd = footerSize
 	}
 
 	return t, nil

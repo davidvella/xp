@@ -29,7 +29,7 @@ func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
 	tmpFile, err := os.CreateTemp(t.TempDir(), "sstable-test-*.sst")
 	assert.NoError(t, err)
 
-	table, err = sstable.OpenFile(tmpFile.Name(), nil)
+	table, err = sstable.Open(tmpFile, nil)
 	if err != nil {
 		os.Remove(tmpFile.Name())
 		t.Fatal(err)
@@ -250,6 +250,9 @@ func TestTableErrors(t *testing.T) {
 
 	_, err = table.Get("key")
 	assert.Error(t, err)
+
+	_, err = sstable.Open(nil, nil)
+	assert.Error(t, err)
 }
 
 func TestBatchWriter_Add(t *testing.T) {
@@ -389,7 +392,7 @@ func setupBenchmarkTable(b *testing.B) (table *sstable.Table, cleanup func()) {
 		b.Fatal(err)
 	}
 
-	table, err = sstable.OpenFile(tmpFile.Name(), nil)
+	table, err = sstable.Open(tmpFile, nil)
 	if err != nil {
 		os.Remove(tmpFile.Name())
 		b.Fatal(err)
@@ -476,6 +479,7 @@ func BenchmarkTableRead(b *testing.B) {
 		}
 	}
 }
+
 func BenchmarkTableRandomRead(b *testing.B) {
 	benchCases := []struct {
 		name      string
