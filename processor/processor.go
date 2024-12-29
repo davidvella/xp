@@ -38,8 +38,9 @@ type activeWriter struct {
 }
 
 func newActiveWriter(writer io.WriteCloser, record partition.Record, name string) activeWriter {
+	w, _ := wal.NewWriter(writer, 1000)
 	return activeWriter{
-		writer: wal.NewWriter(writer),
+		writer: w,
 		information: partition.Information{
 			PartitionKey:   record.GetPartitionKey(),
 			RecordCount:    0,
