@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	uint64Size = int64(binary.Size(uint64(0)))
-	int64Size  = int64(binary.Size(int64(0)))
+	Uint64Size = int64(binary.Size(uint64(0)))
+	Int64Size  = int64(binary.Size(int64(0)))
 	// MagicBytes Magic bytes to identify valid recordio files (REC).
 	MagicBytes           = []byte{0x52, 0x45, 0x43}
 	ErrInvalidMagicBytes = errors.New("invalid magic bytes - not a valid recordio file")
@@ -38,11 +38,11 @@ func (bw BinaryWriter) WriteString(s string) (int64, error) {
 	// Write string content
 	n, err := bw.w.Write([]byte(s))
 	if err != nil {
-		return uint64Size, fmt.Errorf("error writing string content: %w", err)
+		return Uint64Size, fmt.Errorf("error writing string content: %w", err)
 	}
 
 	// Return total bytes written (length field + string content)
-	return uint64Size + int64(n), nil
+	return Uint64Size + int64(n), nil
 }
 
 func (bw BinaryWriter) WriteInt64(i int64) (int64, error) {
@@ -50,7 +50,7 @@ func (bw BinaryWriter) WriteInt64(i int64) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return int64Size, nil
+	return Int64Size, nil
 }
 
 func (bw BinaryWriter) WriteBytes(b []byte) (int64, error) {
@@ -62,11 +62,11 @@ func (bw BinaryWriter) WriteBytes(b []byte) (int64, error) {
 	// Write bytes content
 	n, err := bw.w.Write(b)
 	if err != nil {
-		return uint64Size, fmt.Errorf("error writing bytes content: %w", err)
+		return Uint64Size, fmt.Errorf("error writing bytes content: %w", err)
 	}
 
 	// Return total bytes written (length field + bytes content)
-	return uint64Size + int64(n), nil
+	return Uint64Size + int64(n), nil
 }
 
 // BinaryReader handles reading binary data with error handling.
@@ -253,20 +253,20 @@ func Size(record partition.Record) int64 {
 	totalSize += int64(len(MagicBytes))
 
 	// ID field: length prefix + content
-	totalSize += uint64Size + int64(len(record.GetID()))
+	totalSize += Uint64Size + int64(len(record.GetID()))
 
 	// PartitionKey field: length prefix + content
-	totalSize += uint64Size + int64(len(record.GetPartitionKey()))
+	totalSize += Uint64Size + int64(len(record.GetPartitionKey()))
 
 	// Timestamp: int64 for UnixNano
-	totalSize += int64Size
+	totalSize += Int64Size
 
 	// Timezone: length prefix + content
 	timezone := record.GetWatermark().Location().String()
-	totalSize += uint64Size + int64(len(timezone))
+	totalSize += Uint64Size + int64(len(timezone))
 
 	// Data field: length prefix + content
-	totalSize += uint64Size + int64(len(record.GetData()))
+	totalSize += Uint64Size + int64(len(record.GetData()))
 
 	return totalSize
 }

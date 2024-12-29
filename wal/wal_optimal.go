@@ -21,12 +21,10 @@ var (
 type WAL struct {
 	file          *os.File
 	writer        recordio.BinaryWriter
+	reader        recordio.BinaryReader
 	currentOffset atomic.Int64
 	segments      []*segment
 	segmentLock   sync.RWMutex
-	writeChan     chan partition.Record
-	quitChan      chan struct{}
-	wg            sync.WaitGroup
 	maxRecords    int
 	closed        atomic.Bool
 	filePath      string // Store filepath for reopening
@@ -69,19 +67,59 @@ func NewWAL(filePath string, maxRecords int) (*WAL, error) {
 	wal := &WAL{
 		file:       file,
 		writer:     recordio.NewBinaryWriter(file),
-		segments:   []*segment{newSegment()},
-		writeChan:  make(chan partition.Record, 1000), // Buffered channel
-		quitChan:   make(chan struct{}),
+		reader:     recordio.NewBinaryReader(file),
+		segments:   []*segment{},
 		maxRecords: maxRecords,
 		filePath:   filePath,
 	}
 
+	if info.Size() > 0 {
+		if err := wal.readExistingSegments(); err != nil {
+			file.Close()
+			return nil, err
+		}
+	} else {
+		wal.segments = append(wal.segments, newSegment())
+	}
+
 	wal.currentOffset.Store(info.Size())
 
-	wal.wg.Add(1)
-	go wal.writeLoop()
-
 	return wal, nil
+}
+
+func (w *WAL) readExistingSegments() error {
+	offset := int64(0)
+	for {
+		segment, err := w.readSegment(offset)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		w.segments = append(w.segments, segment)
+		offset += segment.length
+		_, err = w.file.Seek(offset, io.SeekStart)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (w *WAL) readSegment(offset int64) (*segment, error) {
+	// Read segment header
+	l, err := w.reader.ReadInt64()
+	if err != nil {
+		return nil, err
+	}
+
+	seg := newSegment()
+	seg.offset = offset
+	seg.length = l
+	seg.flushed = true
+
+	return seg, nil
 }
 
 func (w *WAL) Write(record partition.Record) error {
@@ -89,28 +127,7 @@ func (w *WAL) Write(record partition.Record) error {
 		return ErrWALClosed
 	}
 
-	select {
-	case w.writeChan <- record:
-		return nil
-	case <-w.quitChan:
-		return ErrWALClosed
-	}
-}
-
-func (w *WAL) writeLoop() {
-	defer w.wg.Done()
-
-	for {
-		select {
-		case record := <-w.writeChan:
-			if err := w.handleRecord(record); err != nil {
-				// Log error here
-				continue
-			}
-		case <-w.quitChan:
-			return
-		}
-	}
+	return w.handleRecord(record)
 }
 
 func (w *WAL) handleRecord(record partition.Record) error {
@@ -150,6 +167,8 @@ func (w *WAL) handleRecord(record partition.Record) error {
 		// Set the length after successful flush
 		currentSegment.mu.Lock()
 		currentSegment.length = w.currentOffset.Load() - currentOffset
+		// Clear the B-tree to free memory after successful flush
+		currentSegment.records = nil
 		currentSegment.mu.Unlock()
 	} else {
 		currentSegment.mu.Unlock()
@@ -159,7 +178,7 @@ func (w *WAL) handleRecord(record partition.Record) error {
 }
 
 func (w *WAL) flushSegment(s *BTree) error {
-	var totalSize int64
+	var totalSize = recordio.Int64Size
 
 	// Pre-calculate size
 	s.Ascend(func(record partition.Record) bool {
@@ -167,11 +186,10 @@ func (w *WAL) flushSegment(s *BTree) error {
 		return true
 	})
 
-	lenSize, err := w.writer.WriteInt64(totalSize)
+	_, err := w.writer.WriteInt64(totalSize)
 	if err != nil {
 		return err
 	}
-	totalSize += lenSize
 
 	// Write records and handle errors
 	var writeErr error
@@ -185,6 +203,10 @@ func (w *WAL) flushSegment(s *BTree) error {
 
 	if writeErr != nil {
 		return writeErr
+	}
+
+	if err := w.file.Sync(); err != nil {
+		return err
 	}
 
 	w.currentOffset.Add(totalSize)
@@ -216,7 +238,7 @@ func (w *WAL) ReadAll() iter.Seq[partition.Record] {
 		seg.mu.RUnlock()
 	}
 
-	tree := loser.New(sequences, nil)
+	tree := loser.New(sequences, partition.Max)
 	return tree.All()
 }
 
@@ -224,9 +246,6 @@ func (w *WAL) Close() error {
 	if w.closed.Swap(true) {
 		return ErrWALClosed
 	}
-
-	close(w.quitChan)
-	w.wg.Wait()
 
 	w.segmentLock.Lock()
 	defer w.segmentLock.Unlock()
@@ -274,9 +293,9 @@ func (sr *segmentReader) All() iter.Seq[partition.Record] {
 			return func(yield func(partition.Record) bool) {}
 		}
 		defer file.Close()
-		reader = io.NewSectionReader(file, sr.offset, sr.length)
+		reader = io.NewSectionReader(file, sr.offset+recordio.Int64Size, sr.length-recordio.Int64Size)
 	} else {
-		reader = io.NewSectionReader(sr.wal.file, sr.offset, sr.length)
+		reader = io.NewSectionReader(sr.wal.file, sr.offset+recordio.Int64Size, sr.length-recordio.Int64Size)
 	}
 
 	return recordio.Seq(reader)
@@ -289,7 +308,7 @@ type memorySegmentReader struct {
 func (mr *memorySegmentReader) All() iter.Seq[partition.Record] {
 	return func(yield func(partition.Record) bool) {
 		mr.records.Ascend(func(record partition.Record) bool {
-			return !yield(record)
+			return yield(record)
 		})
 	}
 }
