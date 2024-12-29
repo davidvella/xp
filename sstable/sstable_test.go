@@ -2,6 +2,7 @@ package sstable_test
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -473,5 +474,45 @@ func BenchmarkTableRead(b *testing.B) {
 		if _, err := table.Get("benchkey"); err != nil {
 			b.Errorf("Read failed: %v", err)
 		}
+	}
+}
+func BenchmarkTableRandomRead(b *testing.B) {
+	benchCases := []struct {
+		name      string
+		tableSize int // Number of records to populate the table with
+	}{
+		{"Small", 1000},
+		{"Medium", 10000},
+		{"Large", 100000},
+		{"XLarge", 1000000},
+	}
+
+	for _, bc := range benchCases {
+		b.Run(fmt.Sprintf("TableSize_%d", bc.tableSize), func(b *testing.B) {
+			// Set up table
+			table, cleanup := setupBenchmarkTable(b)
+			defer cleanup()
+
+			// Generate and insert records
+			records := generateMockRecords(bc.tableSize)
+			writer := table.BatchWriter()
+			require.NoError(b, writer.AddAll(records))
+			require.NoError(b, writer.Close())
+
+			// Pre-generate random keys
+			readKeys := make([]string, b.N)
+			for i := 0; i < b.N; i++ {
+				//nolint:gosec // Don't need crypto security in test
+				idx := rand.IntN(bc.tableSize)
+				readKeys[i] = fmt.Sprintf("key-%06d", idx)
+			}
+
+			// Benchmark random reads
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := table.Get(readKeys[i])
+				require.NoError(b, err)
+			}
+		})
 	}
 }
