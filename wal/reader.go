@@ -8,12 +8,11 @@ import (
 	"github.com/davidvella/xp/loser"
 	"github.com/davidvella/xp/partition"
 	"github.com/davidvella/xp/recordio"
-	"github.com/google/btree"
 )
 
 type Reader struct {
 	r        io.ReaderAt
-	segments []*segment
+	segments []offset
 }
 
 func NewReader(r io.ReaderAt) *Reader {
@@ -44,10 +43,10 @@ func (r *Reader) ReadAll() iter.Seq[partition.Record] {
 }
 
 func (r *Reader) readExistingSegments() error {
-	offset := int64(0)
+	o := int64(0)
 	for {
-		reader := io.NewSectionReader(r.r, offset, recordio.Int64Size)
-		seg, err := readSegment(reader, offset)
+		reader := io.NewSectionReader(r.r, o, recordio.Int64Size)
+		seg, err := readSegment(reader, o)
 		if errors.Is(err, io.EOF) {
 			break
 		}
@@ -55,32 +54,27 @@ func (r *Reader) readExistingSegments() error {
 			return err
 		}
 		r.segments = append(r.segments, seg)
-		offset += seg.length
+		o += seg.length
 	}
 	return nil
 }
 
-func readSegment(r io.Reader, offset int64) (*segment, error) {
+func readSegment(r io.Reader, o int64) (offset, error) {
 	br := recordio.NewBinaryReader(r)
 	l, err := br.ReadInt64()
 	if err != nil {
-		return nil, err
+		return offset{}, err
 	}
 
-	seg := newSegment()
-	seg.offset = offset
-	seg.length = l
-	seg.flushed = true
-
-	return seg, nil
+	return offset{
+		offset: o,
+		length: l,
+	}, nil
 }
 
-func newSegment() *segment {
-	return &segment{
-		records: btree.NewG[partition.Record](2, func(a, b partition.Record) bool {
-			return a.Less(b)
-		}),
-	}
+type offset struct {
+	offset int64
+	length int64
 }
 
 type segmentReader struct {

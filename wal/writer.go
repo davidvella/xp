@@ -28,6 +28,14 @@ func (s *segment) Len() int {
 	return s.records.Len()
 }
 
+func newSegment() *segment {
+	return &segment{
+		records: btree.NewG[partition.Record](2, func(a, b partition.Record) bool {
+			return a.Less(b)
+		}),
+	}
+}
+
 type Writer struct {
 	writer        recordio.BinaryWriter
 	currentOffset atomic.Int64
