@@ -104,7 +104,7 @@ func TestWALClose(t *testing.T) {
 	}{
 		{
 			name: "close empty WAL",
-			setup: func(w *wal.Writer) error {
+			setup: func(_ *wal.Writer) error {
 				return nil
 			},
 			wantErr: nil,
@@ -204,7 +204,6 @@ func TestWALPersistence(t *testing.T) {
 	}()
 }
 
-// Helper functions
 func createTempFile(t *testing.T) *os.File {
 	t.Helper()
 	tmpFile, err := os.CreateTemp(t.TempDir(), "wal_test_*.db")

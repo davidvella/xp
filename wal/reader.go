@@ -1,6 +1,7 @@
 package wal
 
 import (
+	"errors"
 	"io"
 	"iter"
 
@@ -22,13 +23,13 @@ func NewReader(r io.ReaderAt) *Reader {
 }
 
 func (r *Reader) ReadAll() iter.Seq[partition.Record] {
-	var sequences []loser.Sequence[partition.Record]
-
 	err := r.readExistingSegments()
 	if err != nil {
 		return nil
 	}
-	
+
+	var sequences = make([]loser.Sequence[partition.Record], 0, len(r.segments))
+
 	for _, seg := range r.segments {
 		reader := &segmentReader{
 			reader: r.r,
@@ -47,7 +48,7 @@ func (r *Reader) readExistingSegments() error {
 	for {
 		reader := io.NewSectionReader(r.r, offset, recordio.Int64Size)
 		seg, err := readSegment(reader, offset)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil {

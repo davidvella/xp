@@ -37,8 +37,11 @@ type activeWriter struct {
 	lastWatermark time.Time
 }
 
-func newActiveWriter(writer io.WriteCloser, record partition.Record, name string) activeWriter {
-	w, _ := wal.NewWriter(writer, 1000)
+func newActiveWriter(writer io.WriteCloser, record partition.Record, name string) (activeWriter, error) {
+	w, err := wal.NewWriter(writer, 1000)
+	if err != nil {
+		return activeWriter{}, err
+	}
 	return activeWriter{
 		writer: w,
 		information: partition.Information{
@@ -49,7 +52,7 @@ func newActiveWriter(writer io.WriteCloser, record partition.Record, name string
 		lastWatermark: record.GetWatermark(),
 		mu:            &sync.RWMutex{},
 		name:          name,
-	}
+	}, nil
 }
 
 func (w *activeWriter) Write(rec partition.Record) error {
@@ -156,7 +159,10 @@ func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record
 		return activeWriter{}, fmt.Errorf("failed to create writer: %w", err)
 	}
 
-	active := newActiveWriter(writer, record, writerName)
+	active, err := newActiveWriter(writer, record, writerName)
+	if err != nil {
+		return activeWriter{}, fmt.Errorf("failed to create writer: %w", err)
+	}
 
 	w.activeFiles.Set(partitionKey, active)
 
