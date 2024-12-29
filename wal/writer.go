@@ -70,8 +70,6 @@ func (w *Writer) Write(record partition.Record) error {
 		if err := w.flushSegment(seg.records); err != nil {
 			return err
 		}
-
-		// Create new segment
 		w.newSegment()
 	}
 
@@ -101,12 +99,6 @@ func (w *Writer) flushSegment(s *btree.BTreeG[partition.Record]) error {
 
 	if writeErr != nil {
 		return writeErr
-	}
-
-	if closer, ok := w.wc.(interface{ Sync() error }); ok {
-		if err := closer.Sync(); err != nil {
-			return err
-		}
 	}
 
 	w.currentOffset.Add(totalSize)

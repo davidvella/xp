@@ -326,3 +326,36 @@ func setupBenchmarkTable(b *testing.B) (file *os.File, cleanup func()) {
 
 	return tmpFile, cleanup
 }
+
+func TestWALWriteErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func() (*wal.Writer, func())
+		wantErr error
+	}{
+		{
+			name: "write to closed WAL",
+			setup: func() (*wal.Writer, func()) {
+				tmpFile := createTempFile(t)
+				cleanup := func() { os.Remove(tmpFile.Name()) }
+
+				writer, err := wal.NewWriter(tmpFile, 10)
+				require.NoError(t, err)
+				require.NoError(t, writer.Close())
+
+				return writer, cleanup
+			},
+			wantErr: wal.ErrWALClosed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer, cleanup := tt.setup()
+			defer cleanup()
+
+			err := writer.Write(createTestRecord("test", []byte("data")))
+			assert.ErrorIs(t, err, tt.wantErr)
+		})
+	}
+}
