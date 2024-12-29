@@ -57,7 +57,7 @@ func TestWAL(t *testing.T) {
 			defer os.Remove(tmpFile)
 
 			// Create WAL
-			wal, err := wal.NewWAL(tmpFile, tt.maxRecs)
+			wal, err := wal.Open(tmpFile, tt.maxRecs)
 			if tt.wantErr != nil {
 				assert.ErrorIs(t, err, tt.wantErr)
 				return
@@ -125,7 +125,7 @@ func TestWALClose(t *testing.T) {
 			tmpFile := createTempFile(t)
 			defer os.Remove(tmpFile)
 
-			w, err := wal.NewWAL(tmpFile, 10)
+			w, err := wal.Open(tmpFile, 10)
 			require.NoError(t, err)
 
 			err = tt.setup(w)
@@ -155,7 +155,7 @@ func TestWALPersistence(t *testing.T) {
 
 	// Write records to WAL
 	func() {
-		wal, err := wal.NewWAL(tmpFile, 10)
+		wal, err := wal.Open(tmpFile, 10)
 		require.NoError(t, err)
 		defer wal.Close()
 
@@ -167,7 +167,7 @@ func TestWALPersistence(t *testing.T) {
 
 	// Reopen WAL and verify records
 	func() {
-		wal, err := wal.NewWAL(tmpFile, 10)
+		wal, err := wal.Open(tmpFile, 10)
 		require.NoError(t, err)
 		defer wal.Close()
 
@@ -273,7 +273,7 @@ func BenchmarkWALWriter(b *testing.B) {
 			for i := 0; i < b.N; i++ {
 				b.StopTimer()
 				// Create new WAL for each iteration
-				w, err := wal.NewWAL(tmpFile, bc.batchSize)
+				w, err := wal.Open(tmpFile, bc.batchSize)
 				require.NoError(b, err)
 				b.StartTimer()
 
@@ -291,7 +291,7 @@ func BenchmarkWALWriter(b *testing.B) {
 
 		b.Run(fmt.Sprintf("%v_Parallel", bc), func(b *testing.B) {
 			tmpFile := b.TempDir() + "/wal.db"
-			w, err := wal.NewWAL(tmpFile, bc.batchSize)
+			w, err := wal.Open(tmpFile, bc.batchSize)
 			require.NoError(b, err)
 			defer func() {
 				w.Close()
@@ -351,7 +351,7 @@ func BenchmarkWALWrite(b *testing.B) {
 			}
 
 			// Create new WAL for each iteration
-			w, err := wal.NewWAL(tmpFile, 1000)
+			w, err := wal.Open(tmpFile, 1000)
 			require.NoError(b, err)
 			defer func() {
 				w.Close()
@@ -385,7 +385,7 @@ func BenchmarkWALWrite(b *testing.B) {
 				Data:         data,
 			}
 
-			w, err := wal.NewWAL(tmpFile, 1000)
+			w, err := wal.Open(tmpFile, 1000)
 			require.NoError(b, err)
 			defer func() {
 				w.Close()

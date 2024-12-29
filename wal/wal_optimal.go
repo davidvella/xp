@@ -20,8 +20,7 @@ var (
 )
 
 type WAL struct {
-	file          *os.File
-	writer        recordio.BinaryWriter
+	writer        io.WriteCloser
 	reader        recordio.BinaryReader
 	currentOffset atomic.Int64
 	segments      []*segment
@@ -51,7 +50,7 @@ func newSegment() *segment {
 	}
 }
 
-func NewWAL(filePath string, maxRecords int) (*WAL, error) {
+func Open(filePath string, maxRecords int) (*WAL, error) {
 	if maxRecords <= 0 {
 		return nil, ErrInvalidMaxRecords
 	}
@@ -273,7 +272,7 @@ func (w *WAL) Close() error {
 		lastSegment.mu.Unlock()
 	}
 
-	return w.file.Close()
+	return w.writer.Close()
 }
 
 type segmentReader struct {
@@ -314,4 +313,40 @@ func (mr *memorySegmentReader) All() iter.Seq[partition.Record] {
 			return yield(record)
 		})
 	}
+}
+
+func OpenFile(filePath string, maxRecords int) (*WAL, error) {
+	if maxRecords <= 0 {
+		return nil, ErrInvalidMaxRecords
+	}
+
+	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
+	if err != nil {
+		return nil, err
+	}
+
+	info, err := file.Stat()
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+
+	wal, err := Open(file, filePath, maxRecords)
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+
+	// Set initial offset
+	wal.currentOffset.Store(info.Size())
+
+	// Read existing segments if file is not empty
+	if info.Size() > 0 {
+		if err := wal.readExistingSegments(); err != nil {
+			file.Close()
+			return nil, err
+		}
+	}
+
+	return wal, nil
 }
