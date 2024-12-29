@@ -239,3 +239,34 @@ func ReadRecords(r io.Reader) []partition.Record {
 	}
 	return records
 }
+
+// Size calculates the total size in bytes that a record will occupy when written.
+// This includes magic bytes, all fields and their length prefixes.
+func Size(record partition.Record) int64 {
+	if record == nil {
+		return 0
+	}
+
+	var totalSize int64
+
+	// Magic bytes size
+	totalSize += int64(len(MagicBytes))
+
+	// ID field: length prefix + content
+	totalSize += uint64Size + int64(len(record.GetID()))
+
+	// PartitionKey field: length prefix + content
+	totalSize += uint64Size + int64(len(record.GetPartitionKey()))
+
+	// Timestamp: int64 for UnixNano
+	totalSize += int64Size
+
+	// Timezone: length prefix + content
+	timezone := record.GetWatermark().Location().String()
+	totalSize += uint64Size + int64(len(timezone))
+
+	// Data field: length prefix + content
+	totalSize += uint64Size + int64(len(record.GetData()))
+
+	return totalSize
+}
