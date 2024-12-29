@@ -3,6 +3,7 @@ package wal_test
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -224,7 +225,7 @@ func createTestRecord(id string, data []byte) partition.Record {
 	return partition.RecordImpl{
 		ID:           id,
 		PartitionKey: "test-partition",
-		Timestamp:    time.Now(),
+		Timestamp:    time.Unix(0, 0),
 		Data:         data,
 	}
 }
@@ -358,4 +359,76 @@ func TestWALWriteErrors(t *testing.T) {
 			assert.ErrorIs(t, err, tt.wantErr)
 		})
 	}
+}
+
+func TestWALLargeFileRead(t *testing.T) {
+	// Create temp file
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile.Name())
+
+	const (
+		numRecords = 20000
+		dataSize   = 1024 // 1KB per record
+	)
+
+	// Generate test data
+	data := make([]byte, dataSize)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	// Write many records
+	func() {
+		writer, err := wal.NewWriter(tmpFile, 1000)
+		require.NoError(t, err)
+		defer writer.Close()
+		current := "a"
+		for i := 0; i < numRecords; i++ {
+			record := createTestRecord(fmt.Sprintf("test-%s", current), data)
+			err := writer.Write(record)
+			require.NoError(t, err)
+			current = incrementString(current)
+		}
+	}()
+
+	// Read and verify records
+	func() {
+		f, err := os.Open(tmpFile.Name())
+		require.NoError(t, err)
+		defer f.Close()
+
+		reader := wal.NewReader(f)
+		count := 0
+		current := "a"
+		for record := range reader.ReadAll() {
+			// Verify record order
+			require.Equal(t, fmt.Sprintf("test-%s", current), record.GetID())
+			assert.Equal(t, "test-partition", record.GetPartitionKey())
+			assert.Equal(t, dataSize, len(record.GetData()))
+			current = incrementString(current)
+			count++
+		}
+
+		require.Equal(t, numRecords, count, "Should read all records")
+	}()
+}
+
+func incrementString(s string) string {
+	i := len(s) - 1
+	for i >= 0 && s[i] == 'z' {
+		i--
+	}
+
+	if i == -1 {
+		return s + "a"
+	}
+
+	j := 0
+	return strings.Map(func(r rune) rune {
+		if j == i {
+			r += 1
+		}
+		j++
+		return r
+	}, s)
 }
