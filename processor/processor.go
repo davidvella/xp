@@ -153,7 +153,7 @@ func (w *Processor) getActiveWriter(ctx context.Context, record partition.Record
 		return activeWriter{}, fmt.Errorf("failed to rotate: %w", err)
 	}
 
-	writerName := fmt.Sprintf("%s_%d.dat", partitionKey, record.GetWatermark().Unix())
+	writerName := fmt.Sprintf("%s_%d.wal", partitionKey, record.GetWatermark().Unix())
 	writer, err := w.storage.Create(ctx, writerName)
 	if err != nil {
 		return activeWriter{}, fmt.Errorf("failed to create writer: %w", err)

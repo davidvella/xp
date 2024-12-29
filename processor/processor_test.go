@@ -167,7 +167,7 @@ func TestProcessor_WriteRecords(t *testing.T) {
 						return writer, nil
 					},
 					publishFunc: func(_ context.Context, path string) error {
-						assert.Equal(t, "test_1704067201.dat", path)
+						assert.Equal(t, "test_1704067201.wal", path)
 						return nil
 					},
 				}
