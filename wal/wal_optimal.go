@@ -11,6 +11,7 @@ import (
 	"github.com/davidvella/xp/loser"
 	"github.com/davidvella/xp/partition"
 	"github.com/davidvella/xp/recordio"
+	"github.com/google/btree"
 )
 
 var (
@@ -31,7 +32,7 @@ type WAL struct {
 }
 
 type segment struct {
-	records *BTree
+	records *btree.BTreeG[partition.Record]
 	flushed bool
 	offset  int64
 	length  int64
@@ -44,7 +45,9 @@ func (s *segment) Len() int {
 
 func newSegment() *segment {
 	return &segment{
-		records: New(2),
+		records: btree.NewG[partition.Record](2, func(a, b partition.Record) bool {
+			return a.Less(b)
+		}),
 	}
 }
 
@@ -177,7 +180,7 @@ func (w *WAL) handleRecord(record partition.Record) error {
 	return nil
 }
 
-func (w *WAL) flushSegment(s *BTree) error {
+func (w *WAL) flushSegment(s *btree.BTreeG[partition.Record]) error {
 	var totalSize = recordio.Int64Size
 
 	// Pre-calculate size
@@ -302,7 +305,7 @@ func (sr *segmentReader) All() iter.Seq[partition.Record] {
 }
 
 type memorySegmentReader struct {
-	records *BTree
+	records *btree.BTreeG[partition.Record]
 }
 
 func (mr *memorySegmentReader) All() iter.Seq[partition.Record] {
