@@ -3,24 +3,10 @@ package compactor
 import (
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/davidvella/xp/loser"
 	"github.com/davidvella/xp/partition"
 	"github.com/davidvella/xp/sstable"
-)
-
-var (
-	// Create a string with the maximum Unicode code point (U+10FFFF).
-	maxPossibleString = "\U0010FFFF"
-	// The max time that can be represented.
-	maxTime   = time.Date(292277026596, 12, 4, 15, 30, 7, 999999999, time.UTC)
-	maxRecord = partition.RecordImpl{
-		ID:           maxPossibleString,
-		PartitionKey: maxPossibleString,
-		// The max time that can be represented
-		Timestamp: maxTime,
-	}
 )
 
 // Compact performs streaming compaction of multiple sequences using a loser tree.
@@ -35,7 +21,7 @@ func Compact(w io.ReadWriteSeeker, sequences ...loser.Sequence[partition.Record]
 	}
 
 	var (
-		lt   = loser.New[partition.Record](sequences, maxRecord)
+		lt   = loser.New[partition.Record](sequences, partition.Max)
 		last partition.Record
 		bw   = sst.BatchWriter()
 		done bool

@@ -20,8 +20,6 @@ stream windowing without requiring complex frameworks like Apache Beam or Apache
 - Stream Data Management Using Windows: Efficiently processes and organizes
   streaming data through window-based segmentation
 - Streamlined Implementation: Maintains simplicity in design and execution
-- Core Library Dependencies: Functions exclusively with standard library
-  components, eliminating external dependency requirements
 
 ## Installation
 

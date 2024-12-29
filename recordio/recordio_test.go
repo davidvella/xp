@@ -379,3 +379,58 @@ func TestReadRecords(t *testing.T) {
 		})
 	}
 }
+
+func TestSize(t *testing.T) {
+	tests := []struct {
+		name   string
+		record partition.Record
+	}{
+		{
+			name: "empty record",
+			record: partition.RecordImpl{
+				Data:      []byte{},
+				Timestamp: time.Unix(0, 0),
+			},
+		},
+		{
+			name: "record with data only",
+			record: partition.RecordImpl{
+				Data:      []byte("test data"),
+				Timestamp: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+		},
+		{
+			name: "record with all fields",
+			record: partition.RecordImpl{
+				ID:           "test-id",
+				PartitionKey: "test-partition",
+				Data:         []byte("test data"),
+				Timestamp:    time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+			},
+		},
+		{
+			name:   "nil record",
+			record: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Calculate expected size
+			calculatedSize := recordio.Size(tt.record)
+
+			if tt.record == nil {
+				assert.Equal(t, int64(0), calculatedSize)
+				return
+			}
+
+			// Write record and get actual size
+			buf := new(bytes.Buffer)
+			writtenBytes, err := recordio.Write(buf, tt.record)
+
+			assert.NoError(t, err)
+			assert.Equal(t, calculatedSize, writtenBytes, "calculated size should match actual written size")
+			assert.Equal(t, calculatedSize, int64(buf.Len()), "calculated size should match buffer length")
+		})
+	}
+}

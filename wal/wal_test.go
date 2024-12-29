@@ -1,234 +1,434 @@
 package wal_test
 
 import (
-	"bytes"
-	"errors"
-	"sync"
+	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/davidvella/xp/partition"
-	"github.com/davidvella/xp/recordio"
 	"github.com/davidvella/xp/wal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// mockWriteCloser implements io.WriteCloser for testing.
-type mockWriteCloser struct {
-	writeErr error
-	closeErr error
-	written  []byte
-	closed   bool
-	mu       sync.Mutex
-}
-
-func (m *mockWriteCloser) Write(p []byte) (n int, err error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.writeErr != nil {
-		return 0, m.writeErr
-	}
-	m.written = append(m.written, p...)
-	return len(p), nil
-}
-
-func (m *mockWriteCloser) Close() error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.closed = true
-	return m.closeErr
-}
-
-func TestWAL_Write(t *testing.T) {
+func TestWAL(t *testing.T) {
 	tests := []struct {
-		name       string
-		record     partition.Record
-		writeErr   error
-		wantErr    bool
-		wantErrMsg string
+		name      string
+		records   []partition.Record
+		maxRecs   int
+		wantErr   error
+		wantCount int
 	}{
 		{
-			name:     "successful write",
-			record:   partition.RecordImpl{Data: []byte("test data")},
-			writeErr: nil,
-			wantErr:  false,
+			name: "basic write and read",
+			records: []partition.Record{
+				createRecord("1", "part1", time.Now(), []byte("data1")),
+				createRecord("2", "part1", time.Now(), []byte("data2")),
+			},
+			maxRecs:   10,
+			wantErr:   nil,
+			wantCount: 2,
 		},
 		{
-			name:       "write error",
-			record:     partition.RecordImpl{Data: []byte("test data")},
-			writeErr:   errors.New("write failed"),
-			wantErr:    true,
-			wantErrMsg: "failed to write record: failed to write magic bytes: write failed",
+			name: "segment rotation",
+			records: []partition.Record{
+				createRecord("1", "part1", time.Now(), []byte("data1")),
+				createRecord("2", "part1", time.Now(), []byte("data2")),
+				createRecord("3", "part1", time.Now(), []byte("data3")),
+			},
+			maxRecs:   2,
+			wantErr:   nil,
+			wantCount: 3,
 		},
 		{
-			name:     "empty record",
-			record:   partition.RecordImpl{Data: []byte{}},
-			writeErr: nil,
-			wantErr:  false,
+			name:      "invalid max records",
+			records:   []partition.Record{},
+			maxRecs:   0,
+			wantErr:   wal.ErrInvalidMaxRecords,
+			wantCount: 0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mock := &mockWriteCloser{writeErr: tt.writeErr}
-			w := wal.NewWriter(mock)
+			// Setup
+			tmpFile := createTempFile(t)
+			defer os.Remove(tmpFile.Name())
 
-			err := w.Write(tt.record)
+			// Create WAL
+			writer, err := wal.NewWriter(tmpFile, tt.maxRecs)
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				if tt.wantErrMsg != "" {
-					assert.Equal(t, tt.wantErrMsg, err.Error())
+			// Write records
+			for _, record := range tt.records {
+				err := writer.Write(record)
+				require.NoError(t, err)
+			}
+
+			require.NoError(t, writer.Close())
+
+			f, err := os.Open(tmpFile.Name())
+			require.NoError(t, err)
+
+			reader := wal.NewReader(f)
+			// Read all records
+			var readRecords []partition.Record
+			for record := range reader.ReadAll() {
+				readRecords = append(readRecords, record)
+			}
+
+			// Assertions
+			assert.Equal(t, tt.wantCount, len(readRecords))
+
+			// Verify records are in order
+			if len(readRecords) > 1 {
+				for i := 0; i < len(readRecords)-1; i++ {
+					assert.False(t, readRecords[i+1].Less(readRecords[i]),
+						"Records should be in ascending order")
 				}
-			} else {
-				assert.NoError(t, err)
 			}
 		})
 	}
 }
 
-func TestWAL_Close(t *testing.T) {
+func TestWALClose(t *testing.T) {
 	tests := []struct {
-		name     string
-		closeErr error
-		wantErr  bool
+		name    string
+		setup   func(writer *wal.Writer) error
+		wantErr error
 	}{
 		{
-			name:     "successful close",
-			closeErr: nil,
-			wantErr:  false,
+			name: "close empty WAL",
+			setup: func(_ *wal.Writer) error {
+				return nil
+			},
+			wantErr: nil,
 		},
 		{
-			name:     "close error",
-			closeErr: errors.New("close failed"),
-			wantErr:  true,
+			name: "close WAL with unflushed records",
+			setup: func(w *wal.Writer) error {
+				return w.Write(createRecord("1", "part1", time.Now(), []byte("data1")))
+			},
+			wantErr: nil,
+		},
+		{
+			name: "double close",
+			setup: func(w *wal.Writer) error {
+				return w.Close()
+			},
+			wantErr: wal.ErrWALClosed,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mock := &mockWriteCloser{closeErr: tt.closeErr}
-			w := wal.NewWriter(mock)
+			tmpFile := createTempFile(t)
+			defer os.Remove(tmpFile.Name())
 
-			err := w.Close()
+			w, err := wal.NewWriter(tmpFile, 10)
+			require.NoError(t, err)
 
-			if tt.wantErr {
-				assert.Error(t, err)
-				assert.Equal(t, tt.closeErr, err)
+			err = tt.setup(w)
+			require.NoError(t, err)
+
+			err = w.Close()
+			if tt.wantErr != nil {
+				assert.ErrorIs(t, err, tt.wantErr)
 			} else {
 				assert.NoError(t, err)
 			}
-			assert.True(t, mock.closed, "underlying WriteCloser should be closed")
 		})
 	}
 }
 
-func TestWAL_Concurrent(t *testing.T) {
-	mock := &mockWriteCloser{}
-	w := wal.NewWriter(mock)
+func TestWALPersistence(t *testing.T) {
+	// Create temp file
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile.Name())
 
-	// Test concurrent writes
-	const numGoroutines = 10
-	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
-
-	var records = make([]partition.Record, 0, numGoroutines)
-	for i := range numGoroutines {
-		records = append(records, partition.RecordImpl{Data: []byte{byte(i)}, Timestamp: time.Now()})
+	// Test data
+	records := []partition.Record{
+		createRecord("1", "part1", time.Now(), []byte("data1")),
+		createRecord("2", "part1", time.Now(), []byte("data2")),
+		createRecord("3", "part2", time.Now(), []byte("data3")),
 	}
 
-	for i := 0; i < numGoroutines; i++ {
-		go func(i int) {
-			defer wg.Done()
-			err := w.Write(records[i])
-			assert.NoError(t, err)
-		}(i)
-	}
+	// Write records to WAL
+	func() {
+		writer, err := wal.NewWriter(tmpFile, 10)
+		require.NoError(t, err)
+		defer writer.Close()
 
-	wg.Wait()
-
-	assert.Equal(t, numGoroutines*49, len(mock.written))
-
-	r := bytes.NewReader(mock.written)
-	got := recordio.ReadRecords(r)
-
-	assert.Len(t, got, numGoroutines)
-}
-
-type mockReadCloser struct {
-	*bytes.Reader
-	closed bool
-}
-
-func newMockReadCloser(data []byte) *mockReadCloser {
-	return &mockReadCloser{
-		Reader: bytes.NewReader(data),
-	}
-}
-
-func (m *mockReadCloser) Close() error {
-	m.closed = true
-	return nil
-}
-
-func TestReader(t *testing.T) {
-	t.Run("reads all records successfully", func(t *testing.T) {
-		records := []partition.Record{
-			&partition.RecordImpl{Data: []byte("record1")},
-			&partition.RecordImpl{Data: []byte("record2")},
-			&partition.RecordImpl{Data: []byte("record3")},
-		}
-
-		var buf bytes.Buffer
-		for _, rec := range records {
-			_, err := recordio.Write(&buf, rec)
+		for _, record := range records {
+			err := writer.Write(record)
 			require.NoError(t, err)
 		}
+	}()
 
-		mock := newMockReadCloser(buf.Bytes())
-		reader := wal.NewReader(mock)
-
-		var result []partition.Record
-		for rec := range reader.All() {
-			result = append(result, rec)
-		}
-
-		assert.Equal(t, len(records), len(result))
-		for i := range records {
-			assert.Equal(t, records[i].GetData(), result[i].GetData())
-		}
-	})
-
-	t.Run("handles empty input", func(t *testing.T) {
-		mock := newMockReadCloser([]byte{})
-		reader := wal.NewReader(mock)
-
-		count := 0
-		for range reader.All() {
-			count++
-		}
-
-		assert.Equal(t, 0, count)
-	})
-
-	t.Run("closes underlying reader", func(t *testing.T) {
-		mock := newMockReadCloser([]byte{})
-		reader := wal.NewReader(mock)
-
-		err := reader.Close()
+	// Reopen WAL and verify records
+	func() {
+		f, err := os.Open(tmpFile.Name())
 		require.NoError(t, err)
-		assert.True(t, mock.closed)
-	})
+		defer f.Close()
 
-	t.Run("handles corrupted data", func(t *testing.T) {
-		mock := newMockReadCloser([]byte("corrupted data"))
-		reader := wal.NewReader(mock)
+		reader := wal.NewReader(f)
 
+		// Read all records
+		var readRecords []partition.Record
+		for record := range reader.ReadAll() {
+			readRecords = append(readRecords, record)
+		}
+
+		// Verify record count
+		assert.Equal(t, len(records), len(readRecords))
+
+		// Verify record contents
+		for i, expected := range records {
+			actual := readRecords[i]
+			assert.Equal(t, expected.GetID(), actual.GetID())
+			assert.Equal(t, expected.GetPartitionKey(), actual.GetPartitionKey())
+			assert.Equal(t, expected.GetData(), actual.GetData())
+			// Note: Timestamp comparison might need tolerance depending on serialization precision
+		}
+
+		// Verify records are in order
+		for i := 0; i < len(readRecords)-1; i++ {
+			assert.False(t, readRecords[i+1].Less(readRecords[i]),
+				"Records should be in ascending order")
+		}
+	}()
+}
+
+func createTempFile(t *testing.T) *os.File {
+	t.Helper()
+	tmpFile, err := os.CreateTemp(t.TempDir(), "wal_test_*.db")
+	require.NoError(t, err)
+	return tmpFile
+}
+
+func createRecord(id, partKey string, ts time.Time, data []byte) partition.Record {
+	return partition.RecordImpl{
+		ID:           id,
+		PartitionKey: partKey,
+		Timestamp:    ts,
+		Data:         data,
+	}
+}
+
+func createTestRecord(id string, data []byte) partition.Record {
+	return partition.RecordImpl{
+		ID:           id,
+		PartitionKey: "test-partition",
+		Timestamp:    time.Unix(0, 0),
+		Data:         data,
+	}
+}
+
+func BenchmarkWALWrite(b *testing.B) {
+	benchCases := []struct {
+		name     string
+		dataSize int
+	}{
+		{
+			name:     "SmallRecord",
+			dataSize: 100,
+		},
+		{
+			name:     "MediumRecord",
+			dataSize: 1000,
+		},
+		{
+			name:     "LargeRecord",
+			dataSize: 10000,
+		},
+	}
+
+	for _, bc := range benchCases {
+		b.Run(fmt.Sprintf("%v", bc), func(b *testing.B) {
+			// Generate test data
+			data := make([]byte, bc.dataSize)
+			for i := range data {
+				data[i] = byte(i % 256)
+			}
+
+			// Create test record
+			record := createTestRecord("test", data)
+
+			f, cleanup := setupBenchmarkTable(b)
+			defer cleanup()
+
+			w, err := wal.NewWriter(f, 1000)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			for i := 0; i < b.N; i++ {
+				err := w.Write(record)
+				if err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		// Test parallel writes
+		b.Run(fmt.Sprintf("%v", bc)+"_Parallel", func(b *testing.B) {
+			data := make([]byte, bc.dataSize)
+			for i := range data {
+				data[i] = byte(i % 256)
+			}
+
+			record := partition.RecordImpl{
+				ID:           "test-id",
+				PartitionKey: "test-partition",
+				Timestamp:    time.Now(),
+				Data:         data,
+			}
+
+			f, cleanup := setupBenchmarkTable(b)
+			defer cleanup()
+
+			w, err := wal.NewWriter(f, 1000)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			b.ReportAllocs()
+
+			b.RunParallel(func(pb *testing.PB) {
+				for pb.Next() {
+					err := w.Write(record)
+					if err != nil {
+						b.Fatal(err)
+					}
+				}
+			})
+		})
+	}
+}
+
+func setupBenchmarkTable(b *testing.B) (file *os.File, cleanup func()) {
+	b.Helper()
+
+	tmpFile, err := os.CreateTemp(b.TempDir(), "sstable-bench-*.sst")
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	cleanup = func() {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+	}
+
+	return tmpFile, cleanup
+}
+
+func TestWALWriteErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func() (*wal.Writer, func())
+		wantErr error
+	}{
+		{
+			name: "write to closed WAL",
+			setup: func() (*wal.Writer, func()) {
+				tmpFile := createTempFile(t)
+				cleanup := func() { os.Remove(tmpFile.Name()) }
+
+				writer, err := wal.NewWriter(tmpFile, 10)
+				require.NoError(t, err)
+				require.NoError(t, writer.Close())
+
+				return writer, cleanup
+			},
+			wantErr: wal.ErrWALClosed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer, cleanup := tt.setup()
+			defer cleanup()
+
+			err := writer.Write(createTestRecord("test", []byte("data")))
+			assert.ErrorIs(t, err, tt.wantErr)
+		})
+	}
+}
+
+func TestWALLargeFileRead(t *testing.T) {
+	// Create temp file
+	tmpFile := createTempFile(t)
+	defer os.Remove(tmpFile.Name())
+
+	const (
+		numRecords = 20000
+		dataSize   = 1024 // 1KB per record
+	)
+
+	// Generate test data
+	data := make([]byte, dataSize)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+
+	// Write many records
+	func() {
+		writer, err := wal.NewWriter(tmpFile, 1000)
+		require.NoError(t, err)
+		defer writer.Close()
+		current := "a"
+		for i := 0; i < numRecords; i++ {
+			record := createTestRecord(fmt.Sprintf("test-%s", current), data)
+			err := writer.Write(record)
+			require.NoError(t, err)
+			current = incrementString(current)
+		}
+	}()
+
+	// Read and verify records
+	func() {
+		f, err := os.Open(tmpFile.Name())
+		require.NoError(t, err)
+		defer f.Close()
+
+		reader := wal.NewReader(f)
 		count := 0
-		for range reader.All() {
+		current := "a"
+		for record := range reader.ReadAll() {
+			// Verify record order
+			require.Equal(t, fmt.Sprintf("test-%s", current), record.GetID())
+			assert.Equal(t, "test-partition", record.GetPartitionKey())
+			assert.Equal(t, dataSize, len(record.GetData()))
+			current = incrementString(current)
 			count++
 		}
-		assert.Equal(t, 0, count)
-	})
+
+		require.Equal(t, numRecords, count, "Should read all records")
+	}()
+}
+
+func incrementString(s string) string {
+	i := len(s) - 1
+	for i >= 0 && s[i] == 'z' {
+		i--
+	}
+
+	if i == -1 {
+		return s + "a"
+	}
+
+	j := 0
+	return strings.Map(func(r rune) rune {
+		if j == i {
+			r++
+		}
+		j++
+		return r
+	}, s)
 }

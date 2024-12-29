@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+var (
+	// Create a string with the maximum Unicode code point (U+10FFFF).
+	maxPossibleString = "\xff"
+	// The max time that can be represented.
+	maxTime        = time.Date(9999, 12, 31, 23, 59, 59, 999999999, time.UTC)
+	Max     Record = RecordImpl{
+		ID:           maxPossibleString,
+		PartitionKey: maxPossibleString,
+		// The max time that can be represented
+		Timestamp: maxTime,
+	}
+)
+
 type RecordImpl struct {
 	ID           string
 	PartitionKey string
@@ -29,15 +42,15 @@ func (r RecordImpl) GetData() []byte {
 }
 
 func (r RecordImpl) Less(t Record) bool {
-	if c := cmp.Compare(r.PartitionKey, t.GetPartitionKey()); c < 0 {
+	if c := cmp.Compare(r.GetPartitionKey(), t.GetPartitionKey()); c < 0 {
 		return true
 	}
 
-	if c := cmp.Compare(r.ID, t.GetID()); c < 0 {
+	if c := cmp.Compare(r.GetID(), t.GetID()); c < 0 {
 		return true
 	}
 
-	if c := r.Timestamp.Compare(t.GetWatermark()); c < 0 {
+	if c := r.GetWatermark().Compare(t.GetWatermark()); c < 0 {
 		return true
 	}
 
