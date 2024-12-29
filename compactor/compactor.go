@@ -1,12 +1,13 @@
 package compactor
 
 import (
+	"fmt"
 	"io"
 	"time"
 
 	"github.com/davidvella/xp/loser"
 	"github.com/davidvella/xp/partition"
-	"github.com/davidvella/xp/recordio"
+	"github.com/davidvella/xp/sstable"
 )
 
 var (
@@ -23,14 +24,20 @@ var (
 )
 
 // Compact performs streaming compaction of multiple sequences using a loser tree.
-func Compact(w io.Writer, sequences ...loser.Sequence[partition.Record]) error {
+func Compact(w io.ReadWriteSeeker, sequences ...loser.Sequence[partition.Record]) error {
 	if len(sequences) == 0 {
 		return nil
+	}
+
+	sst, err := sstable.Open(w, nil)
+	if err != nil {
+		return fmt.Errorf("compactor: failed to open table: %w", err)
 	}
 
 	var (
 		lt   = loser.New[partition.Record](sequences, maxRecord)
 		last partition.Record
+		bw   = sst.BatchWriter()
 		done bool
 	)
 
@@ -41,8 +48,7 @@ func Compact(w io.Writer, sequences ...loser.Sequence[partition.Record]) error {
 			continue
 		}
 		if last != nil && current.GetID() != last.GetID() {
-			_, err := recordio.Write(w, last)
-			if err != nil {
+			if err := bw.Add(last); err != nil {
 				return err
 			}
 		}
@@ -50,11 +56,10 @@ func Compact(w io.Writer, sequences ...loser.Sequence[partition.Record]) error {
 	}
 
 	if done {
-		_, err := recordio.Write(w, last)
-		if err != nil {
+		if err := bw.Add(last); err != nil {
 			return err
 		}
 	}
 
-	return nil
+	return bw.Close()
 }

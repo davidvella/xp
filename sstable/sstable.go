@@ -8,8 +8,8 @@
 // which contains a set of arbitrary, sorted key-value pairs inside. Duplicate
 // keys are fine, there is no need for "padding" for keys or values, and keys
 // and values are arbitrary blobs. Read in the entire file sequentially and you
-// have a sorted memtable. Optionally, if the file is very large, we can also
-// prepend, or create a standalone key:offset memtable for fast access.
+// have a sorted sparseIndex. Optionally, if the file is very large, we can also
+// prepend, or create a standalone key:offset sparseIndex for fast access.
 package sstable
 
 import (
@@ -33,14 +33,17 @@ var (
 	ErrKeyNotFound    = errors.New("sstable: key not found")
 	ErrCorruptedTable = errors.New("sstable: corrupted table data")
 	ErrReadOnlyTable  = errors.New("sstable: cannot write to read-only table")
+	ErrWriteError     = errors.New("sstable: records must be written in sorted order")
+	footerSize        = int64(binary.Size(magicHeader) + binary.Size(formatVersion))
 )
 
 // File format constants.
 const (
-	magicHeader    = int64(0x53535442) // "SSTB" in hex
-	magicFooter    = int64(0x454E4442) // "ENDB" in hex
-	formatVersion  = int64(1)
-	defaultBufSize = 52 * 1024
+	magicHeader      = int64(0x53535442) // "SSTB" in hex
+	magicFooter      = int64(0x454E4442) // "ENDB" in hex
+	formatVersion    = int64(1)
+	defaultBufSize   = 52 * 1024
+	defaultIndexSize = 1024
 )
 
 // Options configures the behavior of an SSTable.
@@ -55,10 +58,10 @@ type Options struct {
 	BufferSize int
 }
 
-// blockOffset stores the location of a record in the file.
-type blockOffset struct {
+// sparseIndexEntry represents an entry in the sparse index.
+type sparseIndexEntry struct {
+	key    string
 	offset int64
-	size   int64
 }
 
 // Table represents a sorted string table.
@@ -71,14 +74,18 @@ type Table struct {
 	opts   Options
 	closed bool
 
-	memtable map[string]blockOffset
+	sparseIndex []sparseIndexEntry
 
-	// Track the offset where data ends and memtable begins
+	// Track the offset where data ends and sparseIndex begins
 	dataEnd int64
 }
 
 // Open creates a new SSTable using the provided ReadWriteSeeker.
 func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
+	if rw == nil {
+		return nil, errors.New("sstable: ReadWriteSeeker cannot be nil")
+	}
+
 	if opts == nil {
 		opts = &Options{}
 	}
@@ -94,12 +101,12 @@ func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
 	buf := NewReadWriteSeeker(rw, opts.BufferSize)
 
 	t := &Table{
-		rw:       rw,
-		opts:     *opts,
-		memtable: make(map[string]blockOffset),
-		buf:      buf,
-		bw:       recordio.NewBinaryWriter(buf),
-		br:       recordio.NewBinaryReader(buf),
+		rw:          rw,
+		opts:        *opts,
+		sparseIndex: make([]sparseIndexEntry, 0, defaultIndexSize),
+		buf:         buf,
+		bw:          recordio.NewBinaryWriter(buf),
+		br:          recordio.NewBinaryReader(buf),
 	}
 
 	// Check if the ReadWriteSeeker has existing content
@@ -112,7 +119,7 @@ func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
 		if err := t.writeHeader(); err != nil {
 			return nil, errors.Join(err, t.Close())
 		}
-		t.dataEnd = int64(binary.Size(magicHeader) + binary.Size(formatVersion))
+		t.dataEnd = footerSize
 	}
 
 	return t, nil
@@ -167,32 +174,6 @@ func (t *Table) Close() error {
 	return nil
 }
 
-// Put adds or updates a record in the table.
-func (t *Table) Put(record partition.Record) error {
-	if record == nil {
-		return ErrInvalidKey
-	}
-
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	// Seek to end of data section
-	if _, err := t.buf.Seek(t.dataEnd, io.SeekStart); err != nil {
-		return fmt.Errorf("sstable: seek error: %w", err)
-	}
-
-	if err := t.writeRecord(record); err != nil {
-		return err
-	}
-
-	// Write updated memtable
-	if err := t.writeIndex(); err != nil {
-		return fmt.Errorf("sstable: memtable write error: %w", err)
-	}
-
-	return t.buf.Flush()
-}
-
 func (t *Table) writeRecord(record partition.Record) error {
 	if t.closed {
 		return ErrTableClosed
@@ -202,17 +183,25 @@ func (t *Table) writeRecord(record partition.Record) error {
 		return ErrReadOnlyTable
 	}
 
+	// Ensure records are written in sorted order.
+	if len(t.sparseIndex) > 0 {
+		lastKey := t.sparseIndex[len(t.sparseIndex)-1].key
+		if record.GetID() < lastKey {
+			return ErrWriteError
+		}
+	}
+
 	// Write record
 	n, err := recordio.Write(t.buf, record)
 	if err != nil {
 		return err
 	}
 
-	// Update memtable
-	t.memtable[record.GetID()] = blockOffset{
+	// Update sparseIndex
+	t.sparseIndex = append(t.sparseIndex, sparseIndexEntry{
+		key:    record.GetID(),
 		offset: t.dataEnd,
-		size:   n,
-	}
+	})
 
 	// Update data end position
 	t.dataEnd += n
@@ -229,13 +218,13 @@ func (t *Table) Get(key string) (partition.Record, error) {
 		return nil, ErrTableClosed
 	}
 
-	offset, ok := t.memtable[key]
+	offset, ok := t.getKeyOffset(key)
 	if !ok {
 		return nil, ErrKeyNotFound
 	}
 
 	// Seek to record position
-	if _, err := t.buf.Seek(offset.offset, 0); err != nil {
+	if _, err := t.buf.Seek(offset, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("sstable: seek error: %w", err)
 	}
 
@@ -248,16 +237,22 @@ func (t *Table) Get(key string) (partition.Record, error) {
 	return record, nil
 }
 
-// loadTable reads the table format and loads the memtable.
+func (t *Table) getKeyOffset(key string) (int64, bool) {
+	// Binary search over sparse index
+	i := sort.Search(len(t.sparseIndex), func(i int) bool {
+		return t.sparseIndex[i].key >= key
+	})
+	if i < len(t.sparseIndex) && t.sparseIndex[i].key == key {
+		return t.sparseIndex[i].offset, true
+	}
+	return 0, false
+}
+
+// loadTable reads the table format and loads the sparseIndex.
 func (t *Table) loadTable() error {
 	var (
 		err error
 	)
-
-	_, err = t.buf.Seek(0, io.SeekStart)
-	if err != nil {
-		return err
-	}
 
 	if err := t.checkHeader(); err != nil {
 		return err
@@ -268,7 +263,7 @@ func (t *Table) loadTable() error {
 		return err
 	}
 
-	err = t.readMemTable(indexOffset)
+	err = t.readSparseIndex(indexOffset)
 	if err != nil {
 		return err
 	}
@@ -276,8 +271,8 @@ func (t *Table) loadTable() error {
 	return nil
 }
 
-func (t *Table) readMemTable(indexOffset int64) error {
-	// Read memtable
+func (t *Table) readSparseIndex(indexOffset int64) error {
+	// Read sparseIndex
 	t.dataEnd = indexOffset
 	if _, err := t.buf.Seek(indexOffset, io.SeekStart); err != nil {
 		return err
@@ -285,30 +280,25 @@ func (t *Table) readMemTable(indexOffset int64) error {
 
 	count, err := t.br.ReadInt64()
 	if err != nil {
-		return fmt.Errorf("sstable: invalid memtable count: %w", err)
+		return fmt.Errorf("sstable: invalid sparseIndex count: %w", err)
 	}
 
-	t.memtable = make(map[string]blockOffset, count)
+	t.sparseIndex = make([]sparseIndexEntry, 0, count)
 	for i := int64(0); i < count; i++ {
 		key, err := t.br.ReadString()
 		if err != nil {
-			return fmt.Errorf("sstable: invalid memtable key: %w", err)
+			return fmt.Errorf("sstable: invalid sparseIndex key: %w", err)
 		}
 
 		offset, err := t.br.ReadInt64()
 		if err != nil {
-			return fmt.Errorf("sstable: invalid memtable offset: %w", err)
+			return fmt.Errorf("sstable: invalid sparseIndex offset: %w", err)
 		}
 
-		size, err := t.br.ReadInt64()
-		if err != nil {
-			return fmt.Errorf("sstable: invalid memtable size: %w", err)
-		}
-
-		t.memtable[key] = blockOffset{
+		t.sparseIndex = append(t.sparseIndex, sparseIndexEntry{
+			key:    key,
 			offset: offset,
-			size:   size,
-		}
+		})
 	}
 	return nil
 }
@@ -319,6 +309,10 @@ func (t *Table) checkHeader() error {
 		version int64
 		err     error
 	)
+	_, err = t.buf.Seek(0, io.SeekStart)
+	if err != nil {
+		return err
+	}
 	if header, err = t.br.ReadInt64(); err != nil {
 		return fmt.Errorf("sstable: invalid header: %w", err)
 	}
@@ -338,7 +332,7 @@ func (t *Table) checkHeader() error {
 }
 
 func (t *Table) extractIndexOffset() (int64, error) {
-	// Read memtable offset from footer
+	// Read sparseIndex offset from footer
 	var indexOffset int64
 	var err error
 
@@ -374,25 +368,22 @@ func (t *Table) writeHeader() error {
 	return t.buf.Flush()
 }
 
-// writeIndex writes the current memtable.
+// writeIndex writes the current sparseIndex.
 func (t *Table) writeIndex() error {
-	if _, err := t.bw.WriteInt64(int64(len(t.memtable))); err != nil {
+	if _, err := t.bw.WriteInt64(int64(len(t.sparseIndex))); err != nil {
 		return err
 	}
 
-	for k, offset := range t.memtable {
-		if _, err := t.bw.WriteString(k); err != nil {
+	for _, v := range t.sparseIndex {
+		if _, err := t.bw.WriteString(v.key); err != nil {
 			return err
 		}
-		if _, err := t.bw.WriteInt64(offset.offset); err != nil {
-			return err
-		}
-		if _, err := t.bw.WriteInt64(offset.size); err != nil {
+		if _, err := t.bw.WriteInt64(v.offset); err != nil {
 			return err
 		}
 	}
 
-	// Write footer with memtable offset and magic number
+	// Write footer with sparseIndex offset and magic number
 	if _, err := t.bw.WriteInt64(t.dataEnd); err != nil {
 		return err
 	}
@@ -403,61 +394,12 @@ func (t *Table) writeIndex() error {
 	return t.buf.Flush()
 }
 
-func (t *Table) All() iter.Seq[partition.Record] {
-	return func(yield func(partition.Record) bool) {
-		i := t.Iter()
-		for {
-			record, ok := i.Next()
-			if !ok {
-				return
-			}
-			if !yield(record) {
-				return
-			}
-		}
-	}
-}
-
-// Iterator provides sequential access to table records.
-type Iterator struct {
-	table *Table
-	keys  []string
-	pos   int
-}
-
-// Iter returns an iterator over the table's records in key order.
-func (t *Table) Iter() *Iterator {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	keys := make([]string, 0, len(t.memtable))
-	for k := range t.memtable {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	return &Iterator{
-		table: t,
-		keys:  keys,
-		pos:   0,
-	}
-}
-
-// Next returns the next record in the iteration.
-func (it *Iterator) Next() (partition.Record, bool) {
-	if it.pos >= len(it.keys) {
-		return nil, false
+func (t *Table) All() (iter.Seq[partition.Record], error) {
+	if err := t.checkHeader(); err != nil {
+		return nil, err
 	}
 
-	key := it.keys[it.pos]
-	it.pos++
-
-	record, err := it.table.Get(key)
-	if err != nil {
-		return nil, false
-	}
-
-	return record, true
+	return recordio.Seq(t.buf), nil
 }
 
 // BatchWriter creates a new BatchWriter instance.
@@ -494,11 +436,7 @@ func (bw *BatchWriter) AddAll(records []partition.Record) error {
 
 // Flush writes all buffered records to the table in sorted order.
 func (bw *BatchWriter) Flush() error {
-	if err := bw.table.writeIndex(); err != nil {
-		return fmt.Errorf("sstable: index write error: %w", err)
-	}
-
-	return bw.table.buf.Flush()
+	return bw.table.writeIndex()
 }
 
 // Close flushes any remaining records and releases resources.

@@ -12,7 +12,7 @@ import (
 func setupTestFile(t *testing.T) (f io.ReadWriteSeeker, cleanup func()) {
 	t.Helper()
 
-	tmpFile, err := os.CreateTemp("", "test-*.sst")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "test-*.sst")
 	assert.NoError(t, err)
 
 	cleanup = func() {

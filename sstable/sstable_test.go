@@ -2,6 +2,7 @@ package sstable_test
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"github.com/davidvella/xp/partition"
 	"github.com/davidvella/xp/sstable"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestRecord(id string, data []byte) partition.Record {
@@ -24,10 +26,10 @@ func newTestRecord(id string, data []byte) partition.Record {
 func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
 	t.Helper()
 
-	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "sstable-test-*.sst")
 	assert.NoError(t, err)
 
-	table, err = sstable.OpenFile(tmpFile.Name(), nil)
+	table, err = sstable.Open(tmpFile, nil)
 	if err != nil {
 		os.Remove(tmpFile.Name())
 		t.Fatal(err)
@@ -42,7 +44,7 @@ func setupTestingTable(t *testing.T) (table *sstable.Table, cleanup func()) {
 }
 
 func TestTableBasicOperationsReadWriteSeeker(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "sstable-test-*.sst")
 	assert.NoError(t, err)
 
 	table, err := sstable.Open(tmpFile, nil)
@@ -55,8 +57,11 @@ func TestTableBasicOperationsReadWriteSeeker(t *testing.T) {
 
 	// Test single record write and read
 	record := newTestRecord("key1", []byte("value1"))
-	err = table.Put(record)
+	writer := table.BatchWriter()
+	err = writer.Add(record)
 	assert.NoError(t, err)
+
+	assert.NoError(t, writer.Close())
 
 	got, err := table.Get("key1")
 	assert.NoError(t, err)
@@ -70,7 +75,7 @@ func TestHandleErrorWhenDirectoryNotExists(t *testing.T) {
 }
 
 func TestHandleInvalidFile(t *testing.T) {
-	tmpFile, err := os.CreateTemp("", "sstable-test-*.sst")
+	tmpFile, err := os.CreateTemp(t.TempDir(), "sstable-test-*.sst")
 	assert.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 
@@ -94,8 +99,15 @@ func TestTableBasicOperations(t *testing.T) {
 
 	// Test single record write and read
 	record := newTestRecord("key1", []byte("value1"))
-	err := table.Put(record)
+	writer := table.BatchWriter()
+	err := writer.Add(record)
 	assert.NoError(t, err)
+
+	record2 := newTestRecord("key0", []byte("value1"))
+	err = writer.Add(record2)
+	assert.ErrorIs(t, err, sstable.ErrWriteError)
+
+	assert.NoError(t, writer.Close())
 
 	got, err := table.Get("key1")
 	assert.NoError(t, err)
@@ -114,9 +126,13 @@ func TestTableMultipleRecords(t *testing.T) {
 		newTestRecord("key3", []byte("value3")),
 	}
 
+	writer := table.BatchWriter()
+
 	for _, r := range records {
-		assert.NoError(t, table.Put(r))
+		assert.NoError(t, writer.Add(r))
 	}
+
+	assert.NoError(t, writer.Close())
 
 	// Read and verify all records
 	for _, want := range records {
@@ -142,9 +158,13 @@ func TestTableReopen(t *testing.T) {
 		newTestRecord("key2", []byte("value2")),
 	}
 
+	writer := table1.BatchWriter()
+
 	for _, r := range records {
-		assert.NoError(t, table1.Put(r))
+		assert.NoError(t, writer.Add(r))
 	}
+
+	assert.NoError(t, writer.Close())
 
 	err = table1.Close()
 	assert.NoError(t, err)
@@ -167,46 +187,6 @@ func TestTableReopen(t *testing.T) {
 	}
 }
 
-func TestTableIterator(t *testing.T) {
-	table, cleanup := setupTestingTable(t)
-	defer cleanup()
-
-	// Write records in random order
-	records := []partition.Record{
-		newTestRecord("key3", []byte("value3")),
-		newTestRecord("key1", []byte("value1")),
-		newTestRecord("key2", []byte("value2")),
-	}
-
-	for _, r := range records {
-		assert.NoError(t, table.Put(r))
-	}
-
-	// Verify iterator returns records in sorted order
-	iter := table.Iter()
-	i := 0
-	expectedKeys := []string{"key1", "key2", "key3"}
-
-	for {
-		record, ok := iter.Next()
-		if !ok {
-			break
-		}
-
-		if i >= len(expectedKeys) {
-			t.Errorf("Iterator returned more records than expected")
-			break
-		}
-
-		assert.Equal(t, record.GetID(), expectedKeys[i])
-		i++
-	}
-
-	if i != len(expectedKeys) {
-		t.Errorf("Iterator returned %d records, want %d", i, len(expectedKeys))
-	}
-}
-
 func TestTableReadOnly(t *testing.T) {
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test.sst")
@@ -218,7 +198,11 @@ func TestTableReadOnly(t *testing.T) {
 	}
 
 	record := newTestRecord("key1", []byte("value1"))
-	assert.NoError(t, table1.Put(record))
+	writer := table1.BatchWriter()
+
+	assert.NoError(t, writer.Add(record))
+
+	assert.NoError(t, writer.Close())
 
 	assert.NoError(t, table1.Close())
 
@@ -239,15 +223,19 @@ func TestTableReadOnly(t *testing.T) {
 	assert.Equal(t, got.GetData(), record.GetData())
 
 	// Verify write fails
-	err = table2.Put(newTestRecord("key2", []byte("value2")))
-	assert.Error(t, err)
+	writer = table2.BatchWriter()
+
+	assert.Error(t, writer.Add(record))
 }
 
 func TestTableErrors(t *testing.T) {
 	table, cleanup := setupTestingTable(t)
 	defer cleanup()
+	writer := table.BatchWriter()
 
-	assert.Error(t, table.Put(nil))
+	assert.Error(t, writer.Add(nil))
+
+	assert.NoError(t, writer.Close())
 
 	// Test non-existent key
 	_, err := table.Get("nonexistent")
@@ -256,9 +244,14 @@ func TestTableErrors(t *testing.T) {
 	// Test closed table operations
 	assert.NoError(t, table.Close())
 
-	assert.Error(t, table.Put(newTestRecord("key", []byte("value"))))
+	writer = table.BatchWriter()
+
+	assert.Error(t, writer.Add(newTestRecord("key", []byte("value"))))
 
 	_, err = table.Get("key")
+	assert.Error(t, err)
+
+	_, err = sstable.Open(nil, nil)
 	assert.Error(t, err)
 }
 
@@ -309,7 +302,7 @@ func TestBatchWriter_AddAll(t *testing.T) {
 
 	t.Run("Add slice with nil record", func(t *testing.T) {
 		records := []partition.Record{
-			&partition.RecordImpl{ID: "valid", Data: []byte("value")},
+			&partition.RecordImpl{ID: "batch0", Data: []byte("value")},
 			nil,
 		}
 
@@ -366,19 +359,26 @@ func TestTableAll(t *testing.T) {
 
 	// Write records in random order
 	records := []partition.Record{
-		newTestRecord("key3", []byte("value3")),
 		newTestRecord("key1", []byte("value1")),
 		newTestRecord("key2", []byte("value2")),
+		newTestRecord("key3", []byte("value3")),
 	}
 
+	writer := table.BatchWriter()
+
 	for _, r := range records {
-		assert.NoError(t, table.Put(r))
+		assert.NoError(t, writer.Add(r))
 	}
+
+	assert.NoError(t, writer.Close())
 
 	i := 0
 	expectedKeys := []string{"key1", "key2", "key3"}
 
-	for record := range table.All() {
+	iter, err := table.All()
+	assert.NoError(t, err)
+
+	for record := range iter {
 		assert.Equal(t, record.GetID(), expectedKeys[i])
 		i++
 	}
@@ -387,12 +387,12 @@ func TestTableAll(t *testing.T) {
 func setupBenchmarkTable(b *testing.B) (table *sstable.Table, cleanup func()) {
 	b.Helper()
 
-	tmpFile, err := os.CreateTemp("", "sstable-bench-*.sst")
+	tmpFile, err := os.CreateTemp(b.TempDir(), "sstable-bench-*.sst")
 	if err != nil {
 		b.Fatal(err)
 	}
 
-	table, err = sstable.OpenFile(tmpFile.Name(), nil)
+	table, err = sstable.Open(tmpFile, nil)
 	if err != nil {
 		os.Remove(tmpFile.Name())
 		b.Fatal(err)
@@ -422,65 +422,40 @@ func BenchmarkBatchWriter(b *testing.B) {
 		name      string
 		batchSize int
 	}{
-		{"SmallBatch", 100},
-		{"MediumBatch", 1000},
-		{"LargeBatch", 10000},
+		{"SmallBatch", 10000},
+		{"MediumBatch", 100000},
+		{"LargeBatch", 1000000},
 	}
 
 	for _, bc := range benchCases {
 		records := generateMockRecords(bc.batchSize)
 
 		b.Run(fmt.Sprintf("%s/SingleAdd/%d", bc.name, bc.batchSize), func(b *testing.B) {
-			table, cleanup := setupBenchmarkTable(b)
-			defer cleanup()
-
-			writer := table.BatchWriter()
-
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
+				table, cleanup := setupBenchmarkTable(b)
+
+				writer := table.BatchWriter()
+
 				for _, record := range records {
-					if err := writer.Add(record); err != nil {
-						b.Fatal(err)
-					}
+					require.NoError(b, writer.Add(record))
 				}
-				if err := writer.Flush(); err != nil {
-					b.Fatal(err)
-				}
+				require.NoError(b, writer.Flush())
+
+				cleanup()
 			}
 		})
 
 		b.Run(fmt.Sprintf("%s/BatchAdd/%d", bc.name, bc.batchSize), func(b *testing.B) {
-			table, cleanup := setupBenchmarkTable(b)
-			defer cleanup()
-
-			writer := table.BatchWriter()
-
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				if err := writer.AddAll(records); err != nil {
-					b.Fatal(err)
-				}
-				if err := writer.Flush(); err != nil {
-					b.Fatal(err)
-				}
+				table, cleanup := setupBenchmarkTable(b)
+				writer := table.BatchWriter()
+				require.NoError(b, writer.AddAll(records))
+				require.NoError(b, writer.Flush())
+				cleanup()
 			}
 		})
-	}
-}
-
-func BenchmarkTableWrite(b *testing.B) {
-	table, cleanup := setupBenchmarkTable(b)
-	defer cleanup()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		record := newTestRecord(
-			fmt.Sprintf("key%d", i),
-			[]byte(fmt.Sprintf("value%d", i)),
-		)
-		if err := table.Put(record); err != nil {
-			b.Errorf("Write failed: %v", err)
-		}
 	}
 }
 
@@ -489,14 +464,59 @@ func BenchmarkTableRead(b *testing.B) {
 	defer cleanup()
 
 	record := newTestRecord("benchkey", []byte("benchvalue"))
-	if err := table.Put(record); err != nil {
-		b.Fatalf("Failed to write test record: %v", err)
-	}
+
+	writer := table.BatchWriter()
+	err := writer.Add(record)
+	require.NoError(b, err)
+
+	err = writer.Close()
+	require.NoError(b, err)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := table.Get("benchkey"); err != nil {
 			b.Errorf("Read failed: %v", err)
 		}
+	}
+}
+
+func BenchmarkTableRandomRead(b *testing.B) {
+	benchCases := []struct {
+		name      string
+		tableSize int // Number of records to populate the table with
+	}{
+		{"Small", 1000},
+		{"Medium", 10000},
+		{"Large", 100000},
+		{"XLarge", 1000000},
+	}
+
+	for _, bc := range benchCases {
+		b.Run(fmt.Sprintf("TableSize_%d", bc.tableSize), func(b *testing.B) {
+			// Set up table
+			table, cleanup := setupBenchmarkTable(b)
+			defer cleanup()
+
+			// Generate and insert records
+			records := generateMockRecords(bc.tableSize)
+			writer := table.BatchWriter()
+			require.NoError(b, writer.AddAll(records))
+			require.NoError(b, writer.Close())
+
+			// Pre-generate random keys
+			readKeys := make([]string, b.N)
+			for i := 0; i < b.N; i++ {
+				//nolint:gosec // Don't need crypto security in test
+				idx := rand.IntN(bc.tableSize)
+				readKeys[i] = fmt.Sprintf("key-%06d", idx)
+			}
+
+			// Benchmark random reads
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err := table.Get(readKeys[i])
+				require.NoError(b, err)
+			}
+		})
 	}
 }
