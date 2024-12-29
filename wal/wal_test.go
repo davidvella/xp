@@ -426,7 +426,7 @@ func incrementString(s string) string {
 	j := 0
 	return strings.Map(func(r rune) rune {
 		if j == i {
-			r += 1
+			r++
 		}
 		j++
 		return r
