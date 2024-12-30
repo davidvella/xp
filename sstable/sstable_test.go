@@ -25,13 +25,13 @@ func newTestRecord(id string, data []byte) partition.Record {
 }
 
 // setupWriter initializes a new SSTable writer for testing and returns the writer and a cleanup function.
-func setupWriter(t *testing.T, path string, opts *sstable.Options) (*sstable.TableWriter, func()) {
+func setupWriter(t *testing.T, path string) (table *sstable.TableWriter, cleanup func()) {
 	t.Helper()
 
-	writer, err := sstable.OpenWriterFile(path, opts)
+	writer, err := sstable.OpenWriterFile(path, nil)
 	require.NoError(t, err)
 
-	cleanup := func() {
+	cleanup = func() {
 		require.NoError(t, writer.Close())
 		os.Remove(path)
 	}
@@ -40,13 +40,13 @@ func setupWriter(t *testing.T, path string, opts *sstable.Options) (*sstable.Tab
 }
 
 // setupWriter initializes a new SSTable writer for testing and returns the writer and a cleanup function.
-func setupBWriter(b *testing.B, path string, opts *sstable.Options) (*sstable.TableWriter, func()) {
+func setupBWriter(b *testing.B, path string, opts *sstable.Options) (table *sstable.TableWriter, cleanup func()) {
 	b.Helper()
 
 	writer, err := sstable.OpenWriterFile(path, opts)
 	require.NoError(b, err)
 
-	cleanup := func() {
+	cleanup = func() {
 		require.NoError(b, writer.Close())
 		os.Remove(path)
 	}
@@ -55,13 +55,13 @@ func setupBWriter(b *testing.B, path string, opts *sstable.Options) (*sstable.Ta
 }
 
 // setupReader initializes a new SSTable reader for testing and returns the reader and a cleanup function.
-func setupReader(t *testing.T, path string, opts *sstable.Options) (*sstable.TableReader, func()) {
+func setupReader(t *testing.T, path string) (table *sstable.TableReader, cleanup func()) {
 	t.Helper()
 
-	reader, err := sstable.OpenReaderFile(path, opts)
+	reader, err := sstable.OpenReaderFile(path, nil)
 	require.NoError(t, err)
 
-	cleanup := func() {
+	cleanup = func() {
 		require.NoError(t, reader.Close())
 		os.Remove(path)
 	}
@@ -70,13 +70,13 @@ func setupReader(t *testing.T, path string, opts *sstable.Options) (*sstable.Tab
 }
 
 // setupReader initializes a new SSTable reader for testing and returns the reader and a cleanup function.
-func setupBReader(b *testing.B, path string, opts *sstable.Options) (*sstable.TableReader, func()) {
+func setupBReader(b *testing.B, path string, opts *sstable.Options) (table *sstable.TableReader, cleanup func()) {
 	b.Helper()
 
 	reader, err := sstable.OpenReaderFile(path, opts)
 	require.NoError(b, err)
 
-	cleanup := func() {
+	cleanup = func() {
 		require.NoError(b, reader.Close())
 		os.Remove(path)
 	}
@@ -89,7 +89,7 @@ func TestTableBasicOperationsReadWriteSeeker(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_basic.sst")
 
 	// Open writer
-	writer, cleanupWriter := setupWriter(t, path, nil)
+	writer, cleanupWriter := setupWriter(t, path)
 	defer cleanupWriter()
 
 	// Write a single record
@@ -103,7 +103,7 @@ func TestTableBasicOperationsReadWriteSeeker(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	// Open reader
-	reader, cleanupReader := setupReader(t, path, nil)
+	reader, cleanupReader := setupReader(t, path)
 	defer cleanupReader()
 
 	// Read the single record
@@ -143,7 +143,7 @@ func TestTableBasicOperations(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_basic_ops.sst")
 
 	// Open writer
-	writer, cleanupWriter := setupWriter(t, path, nil)
+	writer, cleanupWriter := setupWriter(t, path)
 	defer cleanupWriter()
 
 	// Write a single record
@@ -163,7 +163,7 @@ func TestTableBasicOperations(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	// Open reader
-	reader, cleanupReader := setupReader(t, path, nil)
+	reader, cleanupReader := setupReader(t, path)
 	defer cleanupReader()
 
 	// Read the first record
@@ -177,7 +177,7 @@ func TestTableMultipleRecords(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_multiple_records.sst")
 
 	// Open writer
-	writer, cleanupWriter := setupWriter(t, path, nil)
+	writer, cleanupWriter := setupWriter(t, path)
 	defer cleanupWriter()
 
 	// Write multiple records in sorted order
@@ -199,7 +199,7 @@ func TestTableMultipleRecords(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	// Open reader
-	reader, cleanupReader := setupReader(t, path, nil)
+	reader, cleanupReader := setupReader(t, path)
 	defer cleanupReader()
 
 	// Read and verify all records
@@ -215,7 +215,7 @@ func TestTableReopen(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_reopen.sst")
 
 	// Open writer
-	writer1, cleanupWriter1 := setupWriter(t, path, nil)
+	writer1, cleanupWriter1 := setupWriter(t, path)
 	defer cleanupWriter1()
 
 	// Write records
@@ -236,7 +236,7 @@ func TestTableReopen(t *testing.T) {
 	require.NoError(t, writer1.Close())
 
 	// Open reader
-	reader2, cleanupReader2 := setupReader(t, path, nil)
+	reader2, cleanupReader2 := setupReader(t, path)
 	defer cleanupReader2()
 
 	// Verify records
@@ -252,7 +252,7 @@ func TestTableReadOnly(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_readonly.sst")
 
 	// Open writer
-	writer1, cleanupWriter1 := setupWriter(t, path, nil)
+	writer1, cleanupWriter1 := setupWriter(t, path)
 	defer cleanupWriter1()
 
 	// Write a record
@@ -288,7 +288,7 @@ func TestTableErrors(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_errors.sst")
 
 	// Open writer
-	writer, cleanupWriter := setupWriter(t, path, nil)
+	writer, cleanupWriter := setupWriter(t, path)
 	defer cleanupWriter()
 
 	batch := writer.BatchWriter()
@@ -301,7 +301,7 @@ func TestTableErrors(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	// Open reader
-	reader, cleanupReader := setupReader(t, path, nil)
+	reader, cleanupReader := setupReader(t, path)
 	defer cleanupReader()
 
 	// Test non-existent key
@@ -333,7 +333,7 @@ func TestBatchWriter_Add(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_batch_add.sst")
 
 	// Open writer
-	writer, cleanupWriter := setupWriter(t, path, nil)
+	writer, cleanupWriter := setupWriter(t, path)
 	defer cleanupWriter()
 
 	bw := writer.BatchWriter()
@@ -372,7 +372,7 @@ func TestBatchWriter_AddAll(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_batch_addall.sst")
 
 	// Open writer
-	writer, cleanupWriter := setupWriter(t, path, nil)
+	writer, cleanupWriter := setupWriter(t, path)
 	defer cleanupWriter()
 
 	bw := writer.BatchWriter()
@@ -409,7 +409,7 @@ func TestBatchWriter_AddAll(t *testing.T) {
 		require.NoError(t, writer.Close())
 
 		// Open reader
-		reader, cleanupReader := setupReader(t, path, nil)
+		reader, cleanupReader := setupReader(t, path)
 		defer cleanupReader()
 
 		// Verify all records were written
@@ -427,7 +427,7 @@ func TestBatchWriter_FlushAndClose(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_flush_close.sst")
 
 	// Open writer
-	writer, cleanupWriter := setupWriter(t, path, nil)
+	writer, cleanupWriter := setupWriter(t, path)
 	defer cleanupWriter()
 
 	bw := writer.BatchWriter()
@@ -450,7 +450,7 @@ func TestBatchWriter_FlushAndClose(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	// Open reader
-	reader, cleanupReader := setupReader(t, path, nil)
+	reader, cleanupReader := setupReader(t, path)
 	defer cleanupReader()
 
 	// Read the flushed record
@@ -464,7 +464,7 @@ func TestTableAll(t *testing.T) {
 	path := filepath.Join(tmpDir, "test_all.sst")
 
 	// Open writer
-	writer, cleanupWriter := setupWriter(t, path, nil)
+	writer, cleanupWriter := setupWriter(t, path)
 	defer cleanupWriter()
 
 	// Write records in sorted order
@@ -486,7 +486,7 @@ func TestTableAll(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	// Open reader
-	reader, cleanupReader := setupReader(t, path, nil)
+	reader, cleanupReader := setupReader(t, path)
 	defer cleanupReader()
 
 	// Iterate over all records
