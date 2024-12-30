@@ -313,12 +313,12 @@ func (r *TableReader) getKeyOffset(key string) (int64, bool) {
 }
 
 // All returns an iterator over all records in the table.
-func (r *TableReader) All() (iter.Seq[partition.Record], error) {
+func (r *TableReader) All() iter.Seq[partition.Record] {
 	if err := r.checkHeader(); err != nil {
-		return nil, err
+		return nil
 	}
 
-	return recordio.Seq(r.buf), nil
+	return recordio.Seq(r.buf)
 }
 
 // writeHeader writes the SSTable header.
