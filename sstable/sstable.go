@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"io"
 	"iter"
-	"os"
 	"sort"
 	"sync"
 
@@ -81,7 +80,7 @@ type TableWriter struct {
 }
 
 // OpenWriter initializes a new SSTableWriter using the provided WriteSeeker.
-func OpenWriter(rw io.WriteSeeker, opts *Options) (*TableWriter, error) {
+func OpenWriter(rw io.Writer, opts *Options) (*TableWriter, error) {
 	if rw == nil {
 		return nil, errors.New("sstable: WriteSeeker cannot be nil")
 	}
@@ -141,50 +140,6 @@ func OpenReader(rs io.ReadSeeker, opts *Options) (*TableReader, error) {
 		}
 	} else {
 		return nil, errors.New("sstable: file is empty or corrupted")
-	}
-
-	return reader, nil
-}
-
-// OpenWriterFile opens or creates an SSTable writer at the given path.
-func OpenWriterFile(path string, opts *Options) (*TableWriter, error) {
-	if opts == nil {
-		opts = &Options{}
-	}
-
-	flag := os.O_RDWR | os.O_CREATE
-
-	file, err := os.OpenFile(path, flag, 0o666)
-	if err != nil {
-		return nil, fmt.Errorf("sstable: failed to open file for writing: %w", err)
-	}
-
-	writer, err := OpenWriter(file, opts)
-	if err != nil {
-		file.Close()
-		return nil, fmt.Errorf("sstable: failed to initialize writer: %w", err)
-	}
-
-	return writer, nil
-}
-
-// OpenReaderFile opens an existing SSTable reader at the given path.
-func OpenReaderFile(path string, opts *Options) (*TableReader, error) {
-	if opts == nil {
-		opts = &Options{}
-	}
-
-	flag := os.O_RDONLY
-
-	file, err := os.OpenFile(path, flag, 0o666)
-	if err != nil {
-		return nil, fmt.Errorf("sstable: failed to open file for reading: %w", err)
-	}
-
-	reader, err := OpenReader(file, opts)
-	if err != nil {
-		file.Close()
-		return nil, fmt.Errorf("sstable: failed to initialize reader: %w", err)
 	}
 
 	return reader, nil
