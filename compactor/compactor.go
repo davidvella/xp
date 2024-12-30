@@ -21,7 +21,7 @@ func Compact(w io.ReadWriteSeeker, sequences ...loser.Sequence[partition.Record]
 	}
 
 	var (
-		lt   = loser.New[partition.Record](sequences, partition.Max)
+		lt   = loser.New[partition.Record](sequences, partition.Max, partition.Less)
 		last partition.Record
 		bw   = sst.BatchWriter()
 		done bool

@@ -41,7 +41,7 @@ func (r RecordImpl) GetData() []byte {
 	return r.Data
 }
 
-func (r RecordImpl) Less(t Record) bool {
+func Less(r, t Record) bool {
 	if c := cmp.Compare(r.GetPartitionKey(), t.GetPartitionKey()); c < 0 {
 		return true
 	}
@@ -58,7 +58,6 @@ func (r RecordImpl) Less(t Record) bool {
 }
 
 type Record interface {
-	Less(t Record) bool
 	GetID() string
 	GetPartitionKey() string
 	GetWatermark() time.Time

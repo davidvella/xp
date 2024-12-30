@@ -8,11 +8,11 @@ import (
 	"github.com/davidvella/xp/loser"
 )
 
-type List[E loser.Lesser[E]] struct {
+type List[E any] struct {
 	list []E
 }
 
-func NewList[E loser.Lesser[E]](list ...E) *List[E] {
+func NewList[E any](list ...E) *List[E] {
 	return &List[E]{list: list}
 }
 
@@ -24,7 +24,7 @@ func (it *List[E]) All() iter.Seq[E] {
 	}
 }
 
-func checkIterablesEqual[E loser.Lesser[E]](t *testing.T, a, b loser.Sequence[E]) {
+func checkIterablesEqual[E any](t *testing.T, a, b loser.Sequence[E], less func(a, b E) bool) {
 	t.Helper()
 	count := 0
 	next, stop := iter.Pull(b.All())
@@ -35,7 +35,7 @@ func checkIterablesEqual[E loser.Lesser[E]](t *testing.T, a, b loser.Sequence[E]
 		if !ok {
 			t.Fatalf("b ended before a after %d elements", count)
 		}
-		if va.Less(vb) || vb.Less(va) {
+		if less(va, vb) || less(vb, va) {
 			t.Fatalf("position %d: %v != %v", count, va, vb)
 		}
 	}
@@ -92,14 +92,14 @@ func TestMerge(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			lt := loser.New[Uint64](tt.args, math.MaxUint64)
-			checkIterablesEqual(t, tt.want, lt)
+			lt := loser.New[Uint64](tt.args, math.MaxUint64, Less)
+			checkIterablesEqual(t, tt.want, lt, Less)
 		})
 	}
 }
 
 type Uint64 uint64
 
-func (u Uint64) Less(other Uint64) bool {
+func Less(u, other Uint64) bool {
 	return u < other
 }

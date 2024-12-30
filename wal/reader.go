@@ -38,7 +38,7 @@ func (r *Reader) ReadAll() iter.Seq[partition.Record] {
 		sequences = append(sequences, reader)
 	}
 
-	tree := loser.New(sequences, partition.Max)
+	tree := loser.New(sequences, partition.Max, partition.Less)
 	return tree.All()
 }
 
