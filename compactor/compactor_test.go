@@ -14,11 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type List[E loser.Lesser[E]] struct {
+type List[E any] struct {
 	list []E
 }
 
-func NewList[E loser.Lesser[E]](list ...E) *List[E] {
+func NewList[E any](list ...E) *List[E] {
 	return &List[E]{list: list}
 }
 

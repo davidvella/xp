@@ -48,9 +48,7 @@ func NewWriter(wc io.WriteCloser, maxRecords int) (*Writer, error) {
 
 func (w *Writer) newSegment() {
 	seg := &segment{
-		records: btree.NewG[partition.Record](2, func(a, b partition.Record) bool {
-			return a.Less(b)
-		}),
+		records: btree.NewG[partition.Record](2, partition.Less),
 	}
 	w.currentSegment.Store(seg)
 }

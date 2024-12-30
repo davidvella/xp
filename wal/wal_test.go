@@ -89,7 +89,7 @@ func TestWAL(t *testing.T) {
 			// Verify records are in order
 			if len(readRecords) > 1 {
 				for i := 0; i < len(readRecords)-1; i++ {
-					assert.False(t, readRecords[i+1].Less(readRecords[i]),
+					assert.False(t, partition.Less(readRecords[i+1], readRecords[i]),
 						"Records should be in ascending order")
 				}
 			}
@@ -199,7 +199,7 @@ func TestWALPersistence(t *testing.T) {
 
 		// Verify records are in order
 		for i := 0; i < len(readRecords)-1; i++ {
-			assert.False(t, readRecords[i+1].Less(readRecords[i]),
+			assert.False(t, partition.Less(readRecords[i+1], readRecords[i]),
 				"Records should be in ascending order")
 		}
 	}()
