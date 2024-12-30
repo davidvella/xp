@@ -40,6 +40,7 @@ func ExampleOpenWriter() {
 		fmt.Printf("Error closing writer: %v\n", err)
 		return
 	}
+	// Output:
 }
 
 // ExampleOpenReader demonstrates reading an sstable back.
@@ -97,4 +98,7 @@ func ExampleOpenReader() {
 	for rec := range reader.All() {
 		fmt.Println(rec.GetID())
 	}
+	// Output:
+	// exampleValue
+	// exampleKey
 }
