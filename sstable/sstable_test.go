@@ -118,7 +118,7 @@ func TestHandleErrorWhenDirectoryNotExists(t *testing.T) {
 	_, err := sstable.OpenReaderFile(nonExistentPath, nil)
 	assert.Error(t, err)
 
-	_, err = sstable.OpenWriterFile(nonExistentPath, nil)
+	_, err = sstable.OpenWriterFile(nonExistentPath, &sstable.Options{BufferSize: 1024})
 	assert.Error(t, err)
 }
 
@@ -275,7 +275,7 @@ func TestTableErrors(t *testing.T) {
 	_, err = sstable.OpenReader(nil, nil)
 	assert.Error(t, err)
 
-	_, err = sstable.OpenWriter(nil, nil)
+	_, err = sstable.OpenWriter(nil, &sstable.Options{BufferSize: 1024})
 	assert.Error(t, err)
 }
 
