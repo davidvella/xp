@@ -69,7 +69,7 @@ type sparseIndexEntry struct {
 type TableReader struct {
 	mu          sync.RWMutex
 	rw          io.ReadSeeker
-	buf         *ReaderSeeker
+	buf         *BufferReaderSeeker
 	br          recordio.BinaryReader
 	opts        Options
 	closed      bool
@@ -211,7 +211,6 @@ func OpenReaderFile(path string, opts *Options) (*TableReader, error) {
 	return reader, nil
 }
 
-// CloseWriter closes the writer component.
 func (w *TableWriter) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -222,19 +221,7 @@ func (w *TableWriter) Close() error {
 
 	w.closed = true
 
-	// Write the sparse index
-	if err := w.writeIndex(); err != nil {
-		return err
-	}
-
-	// If the underlying writer is also an io.Closer, close it
-	if closer, ok := w.rw.(io.Closer); ok {
-		if err := closer.Close(); err != nil {
-			return fmt.Errorf("sstable: close error: %w", err)
-		}
-	}
-
-	return nil
+	return w.writeIndex()
 }
 
 // Close closes the reader component.
@@ -251,7 +238,6 @@ func (r *TableReader) Close() error {
 	return nil
 }
 
-// LoadTable reads the table format and loads the sparseIndex.
 func (r *TableReader) loadTable() error {
 	if err := r.checkHeader(); err != nil {
 		return err
@@ -270,7 +256,6 @@ func (r *TableReader) loadTable() error {
 	return nil
 }
 
-// readSparseIndex reads the sparse index from the given offset.
 func (r *TableReader) readSparseIndex(indexOffset int64) error {
 	// Read sparseIndex
 	r.dataEnd = indexOffset
@@ -303,7 +288,6 @@ func (r *TableReader) readSparseIndex(indexOffset int64) error {
 	return nil
 }
 
-// checkHeader verifies the header and version.
 func (r *TableReader) checkHeader() error {
 	var (
 		header  int64
@@ -464,7 +448,7 @@ func (w *TableWriter) BatchWriter() *BatchWriter {
 
 // Flush writes the current sparse index to the footer.
 func (w *TableWriter) Flush() error {
-	return w.writeIndex()
+	return w.buf.Flush()
 }
 
 // writeIndex writes the current sparseIndex and footer.
@@ -524,5 +508,5 @@ func (bw *BatchWriter) Flush() error {
 
 // Close flushes any remaining records and releases resources.
 func (bw *BatchWriter) Close() error {
-	return bw.Flush()
+	return bw.writer.Close()
 }
