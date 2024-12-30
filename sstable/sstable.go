@@ -68,7 +68,6 @@ type sparseIndexEntry struct {
 // TableReader represents the reading component of an SSTable.
 type TableReader struct {
 	mu          sync.RWMutex
-	rw          io.ReadSeeker
 	buf         *BufferReaderSeeker
 	br          recordio.BinaryReader
 	opts        Options
@@ -80,7 +79,6 @@ type TableReader struct {
 // TableWriter represents the writing component of an SSTable.
 type TableWriter struct {
 	mu          sync.Mutex
-	rw          io.Writer
 	buf         *bufio.Writer
 	bw          recordio.BinaryWriter
 	opts        Options
@@ -108,8 +106,8 @@ func OpenWriter(rw io.WriteSeeker, opts *Options) (*TableWriter, error) {
 	}
 
 	buf := bufio.NewWriterSize(rw, defaultBufSize)
+
 	writer := &TableWriter{
-		rw:          rw,
 		opts:        *opts,
 		sparseIndex: make([]sparseIndexEntry, 0, defaultIndexSize),
 		bw:          recordio.NewBinaryWriter(buf),
@@ -145,7 +143,6 @@ func OpenReader(rs io.ReadSeeker, opts *Options) (*TableReader, error) {
 	}
 
 	reader := &TableReader{
-		rw:          rs,
 		opts:        *opts,
 		sparseIndex: make([]sparseIndexEntry, 0, defaultIndexSize),
 		buf:         NewReadSeeker(rs, defaultBufSize),
