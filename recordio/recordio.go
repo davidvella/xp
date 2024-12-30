@@ -164,7 +164,6 @@ func Write(w io.Writer, data partition.Record) (int64, error) {
 
 // ReadRecord reads a single record from the reader.
 func ReadRecord(r io.Reader) (partition.Record, error) {
-
 	magicBytes := make([]byte, len(MagicBytes))
 	if _, err := io.ReadFull(r, magicBytes); err != nil {
 		return nil, fmt.Errorf("failed to read magic bytes: %w", err)
