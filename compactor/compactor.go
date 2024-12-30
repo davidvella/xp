@@ -23,15 +23,9 @@ func Compact(w io.WriteSeeker, sequences ...loser.Sequence[partition.Record]) er
 	var (
 		lt   = loser.New[partition.Record](sequences, partition.Max, partition.Less)
 		last partition.Record
-		done bool
 	)
 
 	for current := range lt.All() {
-		if !done {
-			last = current
-			done = true
-			continue
-		}
 		if last != nil && current.GetID() != last.GetID() {
 			if err := writer.Write(last); err != nil {
 				return err
@@ -40,7 +34,7 @@ func Compact(w io.WriteSeeker, sequences ...loser.Sequence[partition.Record]) er
 		last = current
 	}
 
-	if done {
+	if last != nil {
 		if err := writer.Write(last); err != nil {
 			return err
 		}
