@@ -191,7 +191,6 @@ func (r *TableReader) loadTable() error {
 }
 
 func (r *TableReader) readSparseIndex(indexOffset int64) error {
-	// Read sparseIndex
 	r.dataEnd = indexOffset
 	if _, err := r.buf.Seek(indexOffset, io.SeekStart); err != nil {
 		return err
@@ -239,7 +238,6 @@ func (r *TableReader) checkHeader() error {
 		return ErrCorruptedTable
 	}
 
-	// Read version
 	if version, err = r.br.ReadInt64(); err != nil {
 		return fmt.Errorf("sstable: invalid version: %w", err)
 	}
@@ -252,7 +250,6 @@ func (r *TableReader) checkHeader() error {
 
 // extractIndexOffset reads the index offset from the footer.
 func (r *TableReader) extractIndexOffset() (int64, error) {
-	// Read sparseIndex offset from footer
 	var indexOffset int64
 	var err error
 
@@ -265,7 +262,6 @@ func (r *TableReader) extractIndexOffset() (int64, error) {
 		return 0, err
 	}
 
-	// Verify footer magic
 	var footer int64
 	if footer, err = r.br.ReadInt64(); err != nil {
 		return 0, err
@@ -296,7 +292,6 @@ func (r *TableReader) Get(key string) (partition.Record, error) {
 		return nil, fmt.Errorf("sstable: seek error: %w", err)
 	}
 
-	// Read and parse record directly from buffer
 	record, err := recordio.ReadRecord(r.buf)
 	if err != nil {
 		return nil, fmt.Errorf("sstable: record parse error: %w", err)
