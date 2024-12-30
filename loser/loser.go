@@ -1,5 +1,3 @@
-// Package loser Taken from talk: https://github.com/bboreham/go-loser/blob/iter/tree.go.
-// Thank you Bryan
 package loser
 
 import (
@@ -20,7 +18,7 @@ func New[E any](sequences []Sequence[E], maxVal E, less func(E, E) bool) *Tree[E
 	return &t
 }
 
-// A loser tree is a binary tree laid out such that nodes N and N+1 have parent N/2.
+// Tree A loser tree is a binary tree laid out such that nodes N and N+1 have parent N/2.
 // We store M leaf nodes in positions M...2M-1, and M-1 internal nodes in positions 1..M-1.
 // Node 0 is a special node, containing the winner of the contest.
 type Tree[E any] struct {
