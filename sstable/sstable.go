@@ -400,8 +400,15 @@ func (w *TableWriter) writeHeader() error {
 	return nil
 }
 
-// writeRecord writes a single record to the table.
-func (w *TableWriter) writeRecord(record partition.Record) error {
+// Write writes a single record to the table.
+func (w *TableWriter) Write(record partition.Record) error {
+	if record == nil {
+		return ErrInvalidKey
+	}
+
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
 	if w.closed {
 		return ErrTableClosed
 	}
@@ -436,11 +443,14 @@ func (w *TableWriter) writeRecord(record partition.Record) error {
 	return nil
 }
 
-// BatchWriter creates a new BatchWriter instance.
-func (w *TableWriter) BatchWriter() *BatchWriter {
-	return &BatchWriter{
-		writer: w,
+// WriteAll writes multiple records to the table.
+func (w *TableWriter) WriteAll(records []partition.Record) error {
+	for _, record := range records {
+		if err := w.Write(record); err != nil {
+			return fmt.Errorf("sstable: write error: %w", err)
+		}
 	}
+	return nil
 }
 
 // Flush writes the current sparse index to the footer.
@@ -472,38 +482,4 @@ func (w *TableWriter) writeIndex() error {
 	}
 
 	return w.buf.Flush()
-}
-
-// BatchWriter provides functionality to write multiple records to an SSTable in batches.
-type BatchWriter struct {
-	writer *TableWriter
-}
-
-// Add adds a record to the batch.
-func (bw *BatchWriter) Add(record partition.Record) error {
-	if record == nil {
-		return ErrInvalidKey
-	}
-
-	return bw.writer.writeRecord(record)
-}
-
-// AddAll adds multiple records to the batch, automatically flushing when needed.
-func (bw *BatchWriter) AddAll(records []partition.Record) error {
-	for _, record := range records {
-		if err := bw.Add(record); err != nil {
-			return fmt.Errorf("sstable: batch add error: %w", err)
-		}
-	}
-	return nil
-}
-
-// Flush writes all buffered records to the table in sorted order.
-func (bw *BatchWriter) Flush() error {
-	return bw.writer.Flush()
-}
-
-// Close flushes any remaining records and releases resources.
-func (bw *BatchWriter) Close() error {
-	return bw.writer.Close()
 }

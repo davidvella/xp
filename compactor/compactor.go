@@ -23,7 +23,6 @@ func Compact(w io.WriteSeeker, sequences ...loser.Sequence[partition.Record]) er
 	var (
 		lt   = loser.New[partition.Record](sequences, partition.Max, partition.Less)
 		last partition.Record
-		bw   = writer.BatchWriter()
 		done bool
 	)
 
@@ -34,7 +33,7 @@ func Compact(w io.WriteSeeker, sequences ...loser.Sequence[partition.Record]) er
 			continue
 		}
 		if last != nil && current.GetID() != last.GetID() {
-			if err := bw.Add(last); err != nil {
+			if err := writer.Write(last); err != nil {
 				return err
 			}
 		}
@@ -42,13 +41,9 @@ func Compact(w io.WriteSeeker, sequences ...loser.Sequence[partition.Record]) er
 	}
 
 	if done {
-		if err := bw.Add(last); err != nil {
+		if err := writer.Write(last); err != nil {
 			return err
 		}
-	}
-
-	if err := bw.Close(); err != nil {
-		return err
 	}
 
 	return writer.Close()
