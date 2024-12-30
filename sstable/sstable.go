@@ -13,6 +13,7 @@
 package sstable
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -64,26 +65,34 @@ type sparseIndexEntry struct {
 	offset int64
 }
 
-// Table represents a sorted string table.
-type Table struct {
-	mu     sync.RWMutex
-	rw     io.ReadWriteSeeker
-	buf    *ReaderWriterSeeker
-	bw     recordio.BinaryWriter
-	br     recordio.BinaryReader
-	opts   Options
-	closed bool
-
+// TableReader represents the reading component of an SSTable.
+type TableReader struct {
+	mu          sync.RWMutex
+	rw          io.ReadSeeker
+	buf         *ReaderSeeker
+	br          recordio.BinaryReader
+	opts        Options
+	closed      bool
 	sparseIndex []sparseIndexEntry
-
-	// Track the offset where data ends and sparseIndex begins
-	dataEnd int64
+	dataEnd     int64
 }
 
-// Open creates a new SSTable using the provided ReadWriteSeeker.
-func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
+// TableWriter represents the writing component of an SSTable.
+type TableWriter struct {
+	mu          sync.Mutex
+	rw          io.Writer
+	buf         *bufio.Writer
+	bw          recordio.BinaryWriter
+	opts        Options
+	closed      bool
+	sparseIndex []sparseIndexEntry
+	dataEnd     int64
+}
+
+// OpenWriter initializes a new SSTableWriter using the provided WriteSeeker.
+func OpenWriter(rw io.WriteSeeker, opts *Options) (*TableWriter, error) {
 	if rw == nil {
-		return nil, errors.New("sstable: ReadWriteSeeker cannot be nil")
+		return nil, errors.New("sstable: WriteSeeker cannot be nil")
 	}
 
 	if opts == nil {
@@ -98,74 +107,128 @@ func Open(rw io.ReadWriteSeeker, opts *Options) (*Table, error) {
 		opts.BufferSize = defaultBufSize
 	}
 
-	buf := NewReadWriteSeeker(rw, opts.BufferSize)
-
-	t := &Table{
+	buf := bufio.NewWriterSize(rw, defaultBufSize)
+	writer := &TableWriter{
 		rw:          rw,
 		opts:        *opts,
 		sparseIndex: make([]sparseIndexEntry, 0, defaultIndexSize),
-		buf:         buf,
 		bw:          recordio.NewBinaryWriter(buf),
-		br:          recordio.NewBinaryReader(buf),
+		buf:         buf,
 	}
 
-	// Check if the ReadWriteSeeker has existing content
-	if size, err := rw.Seek(0, io.SeekEnd); err == nil && size > 0 {
-		if err := t.loadTable(); err != nil {
-			return nil, errors.Join(err, t.Close())
-		}
-	} else {
-		// New table, write header
-		if err := t.writeHeader(); err != nil {
-			return nil, errors.Join(err, t.Close())
-		}
-		t.dataEnd = footerSize
+	// Write header for new table
+	if err := writer.writeHeader(); err != nil {
+		return nil, fmt.Errorf("sstable: failed to write header: %w", err)
 	}
 
-	return t, nil
+	writer.dataEnd = footerSize
+
+	return writer, nil
 }
 
-// OpenFile opens or creates an SSTable at the given path.
-func OpenFile(path string, opts *Options) (*Table, error) {
+// OpenReader initializes a new SSTableReader using the provided ReadSeeker.
+func OpenReader(rs io.ReadSeeker, opts *Options) (*TableReader, error) {
+	if rs == nil {
+		return nil, errors.New("sstable: ReadSeeker cannot be nil")
+	}
+
+	if opts == nil {
+		opts = &Options{}
+	}
+
+	if opts.BlockSize == 0 {
+		opts.BlockSize = 4096
+	}
+
+	if opts.BufferSize == 0 {
+		opts.BufferSize = defaultBufSize
+	}
+
+	reader := &TableReader{
+		rw:          rs,
+		opts:        *opts,
+		sparseIndex: make([]sparseIndexEntry, 0, defaultIndexSize),
+		buf:         NewReadSeeker(rs, defaultBufSize),
+		br:          recordio.NewBinaryReader(rs),
+	}
+
+	// Check if the ReadSeeker has existing content
+	if size, err := rs.Seek(0, io.SeekEnd); err == nil && size > footerSize {
+		if err := reader.loadTable(); err != nil {
+			return nil, fmt.Errorf("sstable: failed to load table: %w", err)
+		}
+	} else {
+		return nil, errors.New("sstable: file is empty or corrupted")
+	}
+
+	return reader, nil
+}
+
+// OpenWriterFile opens or creates an SSTable writer at the given path.
+func OpenWriterFile(path string, opts *Options) (*TableWriter, error) {
 	if opts == nil {
 		opts = &Options{}
 	}
 
 	flag := os.O_RDWR | os.O_CREATE
 	if opts.ReadOnly {
-		flag = os.O_RDONLY
+		return nil, errors.New("sstable: cannot open writer in read-only mode")
 	}
 
 	file, err := os.OpenFile(path, flag, 0o666)
 	if err != nil {
-		return nil, fmt.Errorf("sstable: failed to open file: %w", err)
+		return nil, fmt.Errorf("sstable: failed to open file for writing: %w", err)
 	}
 
-	t, err := Open(file, opts)
+	writer, err := OpenWriter(file, opts)
 	if err != nil {
-		return nil, errors.Join(err, file.Close())
+		file.Close()
+		return nil, fmt.Errorf("sstable: failed to initialize writer: %w", err)
 	}
 
-	return t, nil
+	return writer, nil
 }
 
-// Close closes the table.
-func (t *Table) Close() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+// OpenReaderFile opens an existing SSTable reader at the given path.
+func OpenReaderFile(path string, opts *Options) (*TableReader, error) {
+	if opts == nil {
+		opts = &Options{}
+	}
 
-	if t.closed {
+	flag := os.O_RDONLY
+
+	file, err := os.OpenFile(path, flag, 0o666)
+	if err != nil {
+		return nil, fmt.Errorf("sstable: failed to open file for reading: %w", err)
+	}
+
+	reader, err := OpenReader(file, opts)
+	if err != nil {
+		file.Close()
+		return nil, fmt.Errorf("sstable: failed to initialize reader: %w", err)
+	}
+
+	return reader, nil
+}
+
+// CloseWriter closes the writer component.
+func (w *TableWriter) Close() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.closed {
 		return nil
 	}
 
-	t.closed = true
+	w.closed = true
 
-	if err := t.buf.Flush(); err != nil {
-		return fmt.Errorf("sstable: flush error: %w", err)
+	// Write the sparse index
+	if err := w.writeIndex(); err != nil {
+		return err
 	}
 
-	// If the underlying reader/writer is also an io.Closer, close it
-	if closer, ok := t.rw.(io.Closer); ok {
+	// If the underlying writer is also an io.Closer, close it
+	if closer, ok := w.rw.(io.Closer); ok {
 		if err := closer.Close(); err != nil {
 			return fmt.Errorf("sstable: close error: %w", err)
 		}
@@ -174,96 +237,32 @@ func (t *Table) Close() error {
 	return nil
 }
 
-func (t *Table) writeRecord(record partition.Record) error {
-	if t.closed {
-		return ErrTableClosed
+// Close closes the reader component.
+func (r *TableReader) Close() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.closed {
+		return nil
 	}
 
-	if t.opts.ReadOnly {
-		return ErrReadOnlyTable
-	}
-
-	// Ensure records are written in sorted order.
-	if len(t.sparseIndex) > 0 {
-		lastKey := t.sparseIndex[len(t.sparseIndex)-1].key
-		if record.GetID() < lastKey {
-			return ErrWriteError
-		}
-	}
-
-	// Write record
-	n, err := recordio.Write(t.buf, record)
-	if err != nil {
-		return err
-	}
-
-	// Update sparseIndex
-	t.sparseIndex = append(t.sparseIndex, sparseIndexEntry{
-		key:    record.GetID(),
-		offset: t.dataEnd,
-	})
-
-	// Update data end position
-	t.dataEnd += n
+	r.closed = true
 
 	return nil
 }
 
-// Get retrieves a record by its key.
-func (t *Table) Get(key string) (partition.Record, error) {
-	t.mu.RLock()
-	defer t.mu.RUnlock()
-
-	if t.closed {
-		return nil, ErrTableClosed
-	}
-
-	offset, ok := t.getKeyOffset(key)
-	if !ok {
-		return nil, ErrKeyNotFound
-	}
-
-	// Seek to record position
-	if _, err := t.buf.Seek(offset, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("sstable: seek error: %w", err)
-	}
-
-	// Read and parse record directly from buffer
-	record, err := recordio.ReadRecord(t.buf)
-	if err != nil {
-		return nil, fmt.Errorf("sstable: record parse error: %w", err)
-	}
-
-	return record, nil
-}
-
-func (t *Table) getKeyOffset(key string) (int64, bool) {
-	// Binary search over sparse index
-	i := sort.Search(len(t.sparseIndex), func(i int) bool {
-		return t.sparseIndex[i].key >= key
-	})
-	if i < len(t.sparseIndex) && t.sparseIndex[i].key == key {
-		return t.sparseIndex[i].offset, true
-	}
-	return 0, false
-}
-
-// loadTable reads the table format and loads the sparseIndex.
-func (t *Table) loadTable() error {
-	var (
-		err error
-	)
-
-	if err := t.checkHeader(); err != nil {
+// LoadTable reads the table format and loads the sparseIndex.
+func (r *TableReader) loadTable() error {
+	if err := r.checkHeader(); err != nil {
 		return err
 	}
 
-	indexOffset, err := t.extractIndexOffset()
+	indexOffset, err := r.extractIndexOffset()
 	if err != nil {
 		return err
 	}
 
-	err = t.readSparseIndex(indexOffset)
+	err = r.readSparseIndex(indexOffset)
 	if err != nil {
 		return err
 	}
@@ -271,31 +270,32 @@ func (t *Table) loadTable() error {
 	return nil
 }
 
-func (t *Table) readSparseIndex(indexOffset int64) error {
+// readSparseIndex reads the sparse index from the given offset.
+func (r *TableReader) readSparseIndex(indexOffset int64) error {
 	// Read sparseIndex
-	t.dataEnd = indexOffset
-	if _, err := t.buf.Seek(indexOffset, io.SeekStart); err != nil {
+	r.dataEnd = indexOffset
+	if _, err := r.buf.Seek(indexOffset, io.SeekStart); err != nil {
 		return err
 	}
 
-	count, err := t.br.ReadInt64()
+	count, err := r.br.ReadInt64()
 	if err != nil {
 		return fmt.Errorf("sstable: invalid sparseIndex count: %w", err)
 	}
 
-	t.sparseIndex = make([]sparseIndexEntry, 0, count)
+	r.sparseIndex = make([]sparseIndexEntry, 0, count)
 	for i := int64(0); i < count; i++ {
-		key, err := t.br.ReadString()
+		key, err := r.br.ReadString()
 		if err != nil {
 			return fmt.Errorf("sstable: invalid sparseIndex key: %w", err)
 		}
 
-		offset, err := t.br.ReadInt64()
+		offset, err := r.br.ReadInt64()
 		if err != nil {
 			return fmt.Errorf("sstable: invalid sparseIndex offset: %w", err)
 		}
 
-		t.sparseIndex = append(t.sparseIndex, sparseIndexEntry{
+		r.sparseIndex = append(r.sparseIndex, sparseIndexEntry{
 			key:    key,
 			offset: offset,
 		})
@@ -303,17 +303,18 @@ func (t *Table) readSparseIndex(indexOffset int64) error {
 	return nil
 }
 
-func (t *Table) checkHeader() error {
+// checkHeader verifies the header and version.
+func (r *TableReader) checkHeader() error {
 	var (
 		header  int64
 		version int64
 		err     error
 	)
-	_, err = t.buf.Seek(0, io.SeekStart)
+	_, err = r.buf.Seek(0, io.SeekStart)
 	if err != nil {
 		return err
 	}
-	if header, err = t.br.ReadInt64(); err != nil {
+	if header, err = r.br.ReadInt64(); err != nil {
 		return fmt.Errorf("sstable: invalid header: %w", err)
 	}
 	if header != magicHeader {
@@ -321,7 +322,7 @@ func (t *Table) checkHeader() error {
 	}
 
 	// Read version
-	if version, err = t.br.ReadInt64(); err != nil {
+	if version, err = r.br.ReadInt64(); err != nil {
 		return fmt.Errorf("sstable: invalid version: %w", err)
 	}
 	if version != formatVersion {
@@ -331,23 +332,24 @@ func (t *Table) checkHeader() error {
 	return nil
 }
 
-func (t *Table) extractIndexOffset() (int64, error) {
+// extractIndexOffset reads the index offset from the footer.
+func (r *TableReader) extractIndexOffset() (int64, error) {
 	// Read sparseIndex offset from footer
 	var indexOffset int64
 	var err error
 
 	footerSize := int64(binary.Size(indexOffset) + binary.Size(magicFooter))
-	if _, err = t.buf.Seek(-footerSize, io.SeekEnd); err != nil {
+	if _, err = r.buf.Seek(-footerSize, io.SeekEnd); err != nil {
 		return 0, err
 	}
 
-	if indexOffset, err = t.br.ReadInt64(); err != nil {
+	if indexOffset, err = r.br.ReadInt64(); err != nil {
 		return 0, err
 	}
 
 	// Verify footer magic
 	var footer int64
-	if footer, err = t.br.ReadInt64(); err != nil {
+	if footer, err = r.br.ReadInt64(); err != nil {
 		return 0, err
 	}
 	if footer != magicFooter {
@@ -357,71 +359,152 @@ func (t *Table) extractIndexOffset() (int64, error) {
 	return indexOffset, nil
 }
 
-// writeHeader writes the SSTable header.
-func (t *Table) writeHeader() error {
-	if err := binary.Write(t.buf, binary.LittleEndian, magicHeader); err != nil {
-		return err
+// Get retrieves a record by its key.
+func (r *TableReader) Get(key string) (partition.Record, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if r.closed {
+		return nil, ErrTableClosed
 	}
-	if err := binary.Write(t.buf, binary.LittleEndian, formatVersion); err != nil {
-		return err
+
+	offset, ok := r.getKeyOffset(key)
+	if !ok {
+		return nil, ErrKeyNotFound
 	}
-	return t.buf.Flush()
+
+	// Seek to record position
+	if _, err := r.buf.Seek(offset, io.SeekStart); err != nil {
+		return nil, fmt.Errorf("sstable: seek error: %w", err)
+	}
+
+	// Read and parse record directly from buffer
+	record, err := recordio.ReadRecord(r.buf)
+	if err != nil {
+		return nil, fmt.Errorf("sstable: record parse error: %w", err)
+	}
+
+	return record, nil
 }
 
-// writeIndex writes the current sparseIndex.
-func (t *Table) writeIndex() error {
-	if _, err := t.bw.WriteInt64(int64(len(t.sparseIndex))); err != nil {
+// getKeyOffset performs a binary search over the sparse index to find the key's offset.
+func (r *TableReader) getKeyOffset(key string) (int64, bool) {
+	// Binary search over sparse index
+	i := sort.Search(len(r.sparseIndex), func(i int) bool {
+		return r.sparseIndex[i].key >= key
+	})
+	if i < len(r.sparseIndex) && r.sparseIndex[i].key == key {
+		return r.sparseIndex[i].offset, true
+	}
+	return 0, false
+}
+
+// All returns an iterator over all records in the table.
+func (r *TableReader) All() (iter.Seq[partition.Record], error) {
+	if err := r.checkHeader(); err != nil {
+		return nil, err
+	}
+
+	return recordio.Seq(r.buf), nil
+}
+
+// writeHeader writes the SSTable header.
+func (w *TableWriter) writeHeader() error {
+	if err := binary.Write(w.buf, binary.LittleEndian, magicHeader); err != nil {
+		return err
+	}
+	if err := binary.Write(w.buf, binary.LittleEndian, formatVersion); err != nil {
+		return err
+	}
+	return nil
+}
+
+// writeRecord writes a single record to the table.
+func (w *TableWriter) writeRecord(record partition.Record) error {
+	if w.closed {
+		return ErrTableClosed
+	}
+
+	if w.opts.ReadOnly {
+		return ErrReadOnlyTable
+	}
+
+	// Ensure records are written in sorted order.
+	if len(w.sparseIndex) > 0 {
+		lastKey := w.sparseIndex[len(w.sparseIndex)-1].key
+		if record.GetID() < lastKey {
+			return ErrWriteError
+		}
+	}
+
+	// Write record
+	n, err := recordio.Write(w.buf, record)
+	if err != nil {
 		return err
 	}
 
-	for _, v := range t.sparseIndex {
-		if _, err := t.bw.WriteString(v.key); err != nil {
+	// Update sparseIndex
+	w.sparseIndex = append(w.sparseIndex, sparseIndexEntry{
+		key:    record.GetID(),
+		offset: w.dataEnd,
+	})
+
+	// Update data end position
+	w.dataEnd += n
+
+	return nil
+}
+
+// BatchWriter creates a new BatchWriter instance.
+func (w *TableWriter) BatchWriter() *BatchWriter {
+	return &BatchWriter{
+		writer: w,
+	}
+}
+
+// Flush writes the current sparse index to the footer.
+func (w *TableWriter) Flush() error {
+	return w.writeIndex()
+}
+
+// writeIndex writes the current sparseIndex and footer.
+func (w *TableWriter) writeIndex() error {
+	if _, err := w.bw.WriteInt64(int64(len(w.sparseIndex))); err != nil {
+		return err
+	}
+
+	for _, v := range w.sparseIndex {
+		if _, err := w.bw.WriteString(v.key); err != nil {
 			return err
 		}
-		if _, err := t.bw.WriteInt64(v.offset); err != nil {
+		if _, err := w.bw.WriteInt64(v.offset); err != nil {
 			return err
 		}
 	}
 
 	// Write footer with sparseIndex offset and magic number
-	if _, err := t.bw.WriteInt64(t.dataEnd); err != nil {
+	if _, err := w.bw.WriteInt64(w.dataEnd); err != nil {
 		return err
 	}
-	if _, err := t.bw.WriteInt64(magicFooter); err != nil {
+	if _, err := w.bw.WriteInt64(magicFooter); err != nil {
 		return err
 	}
 
-	return t.buf.Flush()
-}
-
-func (t *Table) All() (iter.Seq[partition.Record], error) {
-	if err := t.checkHeader(); err != nil {
-		return nil, err
-	}
-
-	return recordio.Seq(t.buf), nil
-}
-
-// BatchWriter creates a new BatchWriter instance.
-func (t *Table) BatchWriter() *BatchWriter {
-	return &BatchWriter{
-		table: t,
-	}
+	return w.buf.Flush()
 }
 
 // BatchWriter provides functionality to write multiple records to an SSTable in batches.
 type BatchWriter struct {
-	table *Table
+	writer *TableWriter
 }
 
-// Add adds a record to the batch. If the batch size reaches maxBatch,
-// it automatically flushes the records to the table.
+// Add adds a record to the batch.
 func (bw *BatchWriter) Add(record partition.Record) error {
 	if record == nil {
 		return ErrInvalidKey
 	}
 
-	return bw.table.writeRecord(record)
+	return bw.writer.writeRecord(record)
 }
 
 // AddAll adds multiple records to the batch, automatically flushing when needed.
@@ -436,7 +519,7 @@ func (bw *BatchWriter) AddAll(records []partition.Record) error {
 
 // Flush writes all buffered records to the table in sorted order.
 func (bw *BatchWriter) Flush() error {
-	return bw.table.writeIndex()
+	return bw.writer.Flush()
 }
 
 // Close flushes any remaining records and releases resources.

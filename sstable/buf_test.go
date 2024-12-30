@@ -22,40 +22,6 @@ func setupTestFile(t *testing.T) (f io.ReadWriteSeeker, cleanup func()) {
 	return tmpFile, cleanup
 }
 
-func TestWrite(t *testing.T) {
-	tests := []struct {
-		name     string
-		size     int
-		input    []byte
-		expN     int
-		expError error
-	}{
-		{
-			name:  "write within buffer",
-			size:  8,
-			input: []byte("hello"),
-			expN:  5,
-		},
-		{
-			name:  "write larger than buffer",
-			size:  4,
-			input: []byte("hello world"),
-			expN:  11,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			b, cleanup := setupTestFile(t)
-			defer cleanup()
-			rws := sstable.NewReadWriteSeeker(b, tc.size)
-			n, err := rws.Write(tc.input)
-			assert.Equal(t, tc.expError, err)
-			assert.Equal(t, tc.expN, n)
-		})
-	}
-}
-
 func TestRead(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -85,10 +51,10 @@ func TestRead(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b, cleanup := setupTestFile(t)
 			defer cleanup()
-			rws := sstable.NewReadWriteSeeker(b, tc.size)
-			_, err := rws.Write(tc.write)
+			_, err := b.Write(tc.write)
 			assert.NoError(t, err)
-			assert.NoError(t, rws.Flush())
+
+			rws := sstable.NewReadSeeker(b, tc.size)
 
 			_, err = rws.Seek(0, io.SeekStart)
 			assert.NoError(t, err)
@@ -146,10 +112,10 @@ func TestSeek(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			b, cleanup := setupTestFile(t)
 			defer cleanup()
-			rws := sstable.NewReadWriteSeeker(b, tc.size)
-			_, err := rws.Write(tc.write)
+			_, err := b.Write(tc.write)
 			assert.NoError(t, err)
-			assert.NoError(t, rws.Flush())
+
+			rws := sstable.NewReadSeeker(b, tc.size)
 
 			pos, err := rws.Seek(tc.offset, tc.whence)
 			assert.Equal(t, tc.expError, err)
@@ -162,46 +128,6 @@ func TestSeek(t *testing.T) {
 				assert.Equal(t, len(tc.expRead), n)
 				assert.Equal(t, tc.expRead, data)
 			}
-		})
-	}
-}
-
-func TestFlush(t *testing.T) {
-	tests := []struct {
-		name     string
-		size     int
-		writes   [][]byte
-		expError error
-	}{
-		{
-			name: "multiple writes then flush",
-			size: 8,
-			writes: [][]byte{
-				[]byte("hello"),
-				[]byte(" "),
-				[]byte("world"),
-			},
-		},
-		{
-			name:   "flush empty buffer",
-			size:   8,
-			writes: [][]byte{},
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			b, cleanup := setupTestFile(t)
-			defer cleanup()
-			rws := sstable.NewReadWriteSeeker(b, tc.size)
-
-			for _, write := range tc.writes {
-				_, err := rws.Write(write)
-				assert.NoError(t, err)
-			}
-
-			err := rws.Flush()
-			assert.Equal(t, tc.expError, err)
 		})
 	}
 }

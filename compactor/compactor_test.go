@@ -102,7 +102,7 @@ func TestCompact(t *testing.T) {
 				assert.Error(t, err)
 			}
 
-			table, err := sstable.Open(tmpFile, nil)
+			table, err := sstable.OpenReader(tmpFile, nil)
 			assert.NoError(t, err)
 
 			var gotRecords []partition.Record

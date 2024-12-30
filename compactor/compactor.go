@@ -10,12 +10,12 @@ import (
 )
 
 // Compact performs streaming compaction of multiple sequences using a loser tree.
-func Compact(w io.ReadWriteSeeker, sequences ...loser.Sequence[partition.Record]) error {
+func Compact(w io.WriteSeeker, sequences ...loser.Sequence[partition.Record]) error {
 	if len(sequences) == 0 {
 		return nil
 	}
 
-	sst, err := sstable.Open(w, nil)
+	sst, err := sstable.OpenWriter(w, nil)
 	if err != nil {
 		return fmt.Errorf("compactor: failed to open table: %w", err)
 	}
