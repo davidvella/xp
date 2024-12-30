@@ -1,6 +1,7 @@
 package sstable_test
 
 import (
+	cyrptoRand "crypto/rand"
 	"fmt"
 	"math/rand"
 	"os"
@@ -182,8 +183,10 @@ func TestTableMultipleRecords(t *testing.T) {
 		newTestRecord("key3", []byte("value3")),
 	}
 
-	err := writer.WriteAll(records)
-	assert.NoError(t, err)
+	for _, r := range records {
+		err := writer.Write(r)
+		assert.NoError(t, err)
+	}
 
 	// Close writer
 	require.NoError(t, writer.Close())
@@ -214,8 +217,10 @@ func TestTableReopen(t *testing.T) {
 		newTestRecord("key2", []byte("value2")),
 	}
 
-	err := writer1.WriteAll(records)
-	assert.NoError(t, err)
+	for _, r := range records {
+		err := writer1.Write(r)
+		assert.NoError(t, err)
+	}
 
 	// Close writer
 	require.NoError(t, writer1.Close())
@@ -230,40 +235,6 @@ func TestTableReopen(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, got.GetData(), want.GetData())
 	}
-}
-
-func TestTableReadOnly(t *testing.T) {
-	tmpDir := t.TempDir()
-	path := filepath.Join(tmpDir, "test_readonly.sst")
-
-	// Open writer
-	writer1, cleanupWriter1 := setupWriter(t, path)
-	defer cleanupWriter1()
-
-	// Write a record
-	record := newTestRecord("key1", []byte("value1"))
-	err := writer1.Write(record)
-	assert.NoError(t, err)
-
-	// Close writer
-	require.NoError(t, writer1.Close())
-
-	// Open reader in read-only mode
-	reader2, err := sstable.OpenReaderFile(path, &sstable.Options{ReadOnly: true})
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, reader2.Close())
-	}()
-
-	// Read the record
-	got, err := reader2.Get("key1")
-	assert.NoError(t, err)
-	assert.Equal(t, got.GetData(), record.GetData())
-
-	// Attempt to open writer in read-only mode
-	writer2, err := sstable.OpenWriterFile(path, &sstable.Options{ReadOnly: true})
-	require.Error(t, err)
-	assert.Nil(t, writer2)
 }
 
 func TestTableErrors(t *testing.T) {
@@ -323,8 +294,9 @@ func TestTableAll(t *testing.T) {
 		newTestRecord("key3", []byte("value3")),
 	}
 
-	err := writer.WriteAll(records)
-	assert.NoError(t, err)
+	for _, r := range records {
+		assert.NoError(t, writer.Write(r))
+	}
 
 	// Close writer
 	require.NoError(t, writer.Close())
@@ -385,18 +357,6 @@ func BenchmarkTableWrite(b *testing.B) {
 				require.NoError(b, writer.Close())
 			}
 		})
-
-		b.Run(fmt.Sprintf("%s/WriteAll/%d", bc.name, bc.batchSize), func(b *testing.B) {
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				path := filepath.Join(b.TempDir(), fmt.Sprintf("bench-%d.sst", i))
-				writer, err := sstable.OpenWriterFile(path, nil)
-				require.NoError(b, err)
-
-				require.NoError(b, writer.WriteAll(records))
-				require.NoError(b, writer.Close())
-			}
-		})
 	}
 }
 
@@ -450,8 +410,10 @@ func BenchmarkTableRandomRead(b *testing.B) {
 
 			// Generate and insert records
 			records := generateMockRecords(bc.tableSize)
-			err := writer.WriteAll(records)
-			require.NoError(b, err)
+			for _, r := range records {
+				err := writer.Write(r)
+				require.NoError(b, err)
+			}
 			require.NoError(b, writer.Close())
 
 			// Open reader
@@ -474,6 +436,41 @@ func BenchmarkTableRandomRead(b *testing.B) {
 					b.Errorf("Read failed: %v", err)
 				}
 			}
+		})
+	}
+}
+
+func BenchmarkIndividualWrites(b *testing.B) {
+	benchCases := []struct {
+		name      string
+		valueSize int // Size of the value in bytes
+	}{
+		{"SmallValue", 64},
+		{"MediumValue", 1024},
+		{"LargeValue", 1024 * 1024}, // 1MB
+	}
+
+	for _, bc := range benchCases {
+		b.Run(bc.name, func(b *testing.B) {
+			path := filepath.Join(b.TempDir(), "bench_individual_write.sst")
+			writer, cleanupWriter := setupBWriter(b, path, nil)
+			defer cleanupWriter()
+
+			value := make([]byte, bc.valueSize)
+			_, err := cyrptoRand.Read(value)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				record := newTestRecord(
+					fmt.Sprintf("key-%09d", i), // Ensure keys are sorted
+					value,
+				)
+				if err := writer.Write(record); err != nil {
+					b.Fatal(err)
+				}
+			}
+			b.StopTimer()
 		})
 	}
 }

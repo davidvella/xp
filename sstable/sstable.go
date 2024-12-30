@@ -33,7 +33,6 @@ var (
 	ErrInvalidKey     = errors.New("sstable: invalid key")
 	ErrKeyNotFound    = errors.New("sstable: key not found")
 	ErrCorruptedTable = errors.New("sstable: corrupted table data")
-	ErrReadOnlyTable  = errors.New("sstable: cannot write to read-only table")
 	ErrWriteError     = errors.New("sstable: records must be written in sorted order")
 	footerSize        = int64(binary.Size(magicHeader) + binary.Size(formatVersion))
 )
@@ -49,12 +48,6 @@ const (
 
 // Options configures the behavior of an SSTable.
 type Options struct {
-	// ReadOnly opens the table in read-only mode if true.
-	ReadOnly bool
-
-	// BlockSize is the size of data blocks in bytes.
-	BlockSize int
-
 	// BufferSize is the size of the read/write buffer.
 	BufferSize int
 }
@@ -97,10 +90,6 @@ func OpenWriter(rw io.WriteSeeker, opts *Options) (*TableWriter, error) {
 		opts = &Options{}
 	}
 
-	if opts.BlockSize == 0 {
-		opts.BlockSize = 4096
-	}
-
 	if opts.BufferSize == 0 {
 		opts.BufferSize = defaultBufSize
 	}
@@ -134,10 +123,6 @@ func OpenReader(rs io.ReadSeeker, opts *Options) (*TableReader, error) {
 		opts = &Options{}
 	}
 
-	if opts.BlockSize == 0 {
-		opts.BlockSize = 4096
-	}
-
 	if opts.BufferSize == 0 {
 		opts.BufferSize = defaultBufSize
 	}
@@ -168,9 +153,6 @@ func OpenWriterFile(path string, opts *Options) (*TableWriter, error) {
 	}
 
 	flag := os.O_RDWR | os.O_CREATE
-	if opts.ReadOnly {
-		return nil, errors.New("sstable: cannot open writer in read-only mode")
-	}
 
 	file, err := os.OpenFile(path, flag, 0o666)
 	if err != nil {
@@ -413,10 +395,6 @@ func (w *TableWriter) Write(record partition.Record) error {
 		return ErrTableClosed
 	}
 
-	if w.opts.ReadOnly {
-		return ErrReadOnlyTable
-	}
-
 	// Ensure records are written in sorted order.
 	if len(w.sparseIndex) > 0 {
 		lastKey := w.sparseIndex[len(w.sparseIndex)-1].key
@@ -441,21 +419,6 @@ func (w *TableWriter) Write(record partition.Record) error {
 	w.dataEnd += n
 
 	return nil
-}
-
-// WriteAll writes multiple records to the table.
-func (w *TableWriter) WriteAll(records []partition.Record) error {
-	for _, record := range records {
-		if err := w.Write(record); err != nil {
-			return fmt.Errorf("sstable: write error: %w", err)
-		}
-	}
-	return nil
-}
-
-// Flush writes the current sparse index to the footer.
-func (w *TableWriter) Flush() error {
-	return w.buf.Flush()
 }
 
 // writeIndex writes the current sparseIndex and footer.
