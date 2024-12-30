@@ -79,7 +79,7 @@ func TestWAL(t *testing.T) {
 			reader := wal.NewReader(f)
 			// Read all records
 			var readRecords []partition.Record
-			for record := range reader.ReadAll() {
+			for record := range reader.All() {
 				readRecords = append(readRecords, record)
 			}
 
@@ -181,7 +181,7 @@ func TestWALPersistence(t *testing.T) {
 
 		// Read all records
 		var readRecords []partition.Record
-		for record := range reader.ReadAll() {
+		for record := range reader.All() {
 			readRecords = append(readRecords, record)
 		}
 
@@ -400,7 +400,7 @@ func TestWALLargeFileRead(t *testing.T) {
 		reader := wal.NewReader(f)
 		count := 0
 		current := "a"
-		for record := range reader.ReadAll() {
+		for record := range reader.All() {
 			// Verify record order
 			require.Equal(t, fmt.Sprintf("test-%s", current), record.GetID())
 			assert.Equal(t, "test-partition", record.GetPartitionKey())

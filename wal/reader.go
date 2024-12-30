@@ -21,7 +21,7 @@ func NewReader(r io.ReaderAt) *Reader {
 	}
 }
 
-func (r *Reader) ReadAll() iter.Seq[partition.Record] {
+func (r *Reader) All() iter.Seq[partition.Record] {
 	err := r.readExistingSegments()
 	if err != nil {
 		return nil
