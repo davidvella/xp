@@ -283,14 +283,10 @@ func TestTableAll(t *testing.T) {
 	reader, cleanupReader := setupReader(t, path)
 	defer cleanupReader()
 
-	// Iterate over all records
-	iter, err := reader.All()
-	assert.NoError(t, err)
-
 	i := 0
 	expectedKeys := []string{"key1", "key2", "key3"}
 
-	for record := range iter {
+	for record := range reader.All() {
 		assert.Equal(t, record.GetID(), expectedKeys[i])
 		assert.Equal(t, record.GetData(), records[i].GetData())
 		i++

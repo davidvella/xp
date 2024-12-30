@@ -11,7 +11,7 @@ tools: ## Installs required binaries locally
 ##@ Tests
 test: ## Run unit tests
 	@echo "== unit test"
-	go test -short -cover ./...
+	go test -cover -v ./...
 
 ##@ Run static checks
 check: tools ## Runs lint, fmt and vet checks against the codebase

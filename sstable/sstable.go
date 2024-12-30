@@ -1,15 +1,3 @@
-// Package sstable - Sorted String Table (SSTable) is one of the most popular
-// outputs for storing, processing, and exchanging datasets. As the name itself
-// implies, an SSTable is a simple abstraction to efficiently store large
-// numbers of key-value pairs while optimizing for high throughput, sequential
-// read/write workloads.
-//
-// A "Sorted String Table" then is exactly what it sounds like, it is a file
-// which contains a set of arbitrary, sorted key-value pairs inside. Duplicate
-// keys are fine, there is no need for "padding" for keys or values, and keys
-// and values are arbitrary blobs. Read in the entire file sequentially and you
-// have a sorted sparseIndex. Optionally, if the file is very large, we can also
-// prepend, or create a standalone key:offset sparseIndex for fast access.
 package sstable
 
 import (
@@ -313,12 +301,12 @@ func (r *TableReader) getKeyOffset(key string) (int64, bool) {
 }
 
 // All returns an iterator over all records in the table.
-func (r *TableReader) All() (iter.Seq[partition.Record], error) {
+func (r *TableReader) All() iter.Seq[partition.Record] {
 	if err := r.checkHeader(); err != nil {
-		return nil, err
+		return nil
 	}
 
-	return recordio.Seq(r.buf), nil
+	return recordio.Seq(r.buf)
 }
 
 // writeHeader writes the SSTable header.
