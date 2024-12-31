@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockProducerStorage implements processor.Storage for testing
+// MockProducerStorage implements processor.Storage for testing.
 type MockProducerStorage struct {
 	createFunc  func(context.Context, string) (io.WriteCloser, error)
 	publishFunc func(context.Context, string) error
@@ -41,7 +41,7 @@ func (m *MockProducerStorage) Publish(ctx context.Context, path string) error {
 	return nil
 }
 
-// MockConsumerStorage implements consumer.Storage for testing
+// MockConsumerStorage implements consumer.Storage for testing.
 type MockConsumerStorage struct {
 	openFunc        func(context.Context, string) (consumer.ReadAtCloser, error)
 	listPublishFunc func(context.Context) ([]string, error)
@@ -69,7 +69,7 @@ func (m *MockConsumerStorage) Delete(ctx context.Context, path string) error {
 	return nil
 }
 
-// MockHandler implements handler.Handler for testing
+// MockHandler implements handler.Handler for testing.
 type MockHandler struct {
 	handleFunc func(context.Context, string, iter.Seq[partition.Record]) error
 }
@@ -138,7 +138,7 @@ func TestProcessor_Handle(t *testing.T) {
 			name: "successful handle",
 			setupMocks: func() (*MockProducerStorage, *MockConsumerStorage, *MockHandler) {
 				return &MockProducerStorage{
-					createFunc: func(ctx context.Context, path string) (io.WriteCloser, error) {
+					createFunc: func(_ context.Context, _ string) (io.WriteCloser, error) {
 						return &MockWriteCloser{}, nil
 					},
 				}, &MockConsumerStorage{}, &MockHandler{}
@@ -195,7 +195,7 @@ func TestProcessor_Stop(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// MockWriteCloser is a helper for testing
+// MockWriteCloser is a helper for testing.
 type MockWriteCloser struct {
 	writeErr error
 	closeErr error
@@ -212,7 +212,7 @@ func (m *MockWriteCloser) Close() error {
 	return m.closeErr
 }
 
-// MockStrategy is a helper for testing
+// MockStrategy is a helper for testing.
 type MockStrategy struct{}
 
 func (m *MockStrategy) ShouldRotate(partition.Information, time.Time) bool {
