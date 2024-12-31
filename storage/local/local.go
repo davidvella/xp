@@ -32,8 +32,9 @@ func (s *Storage) Create(_ context.Context, path string) (io.WriteCloser, error)
 }
 
 func (s *Storage) Publish(_ context.Context, path string) error {
+	oldPath := filepath.Join(s.pendingDir, filepath.Base(path))
 	newPath := filepath.Join(s.publishingDir, filepath.Base(path))
-	return os.Rename(path, newPath)
+	return os.Rename(oldPath, newPath)
 }
 
 func (s *Storage) List(_ context.Context) ([]string, error) {

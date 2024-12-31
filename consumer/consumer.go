@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davidvella/xp"
+	"github.com/davidvella/xp/handler"
 	"github.com/davidvella/xp/processor"
 	"github.com/davidvella/xp/wal"
 )
@@ -29,7 +29,7 @@ type ReadAtCloser interface {
 
 type Consumer struct {
 	storage         Storage
-	handler         xp.Handler
+	handler         handler.Handler
 	pollInterval    time.Duration
 	maxConcurrency  int
 	processingFiles sync.Map
@@ -50,7 +50,7 @@ func DefaultOptions() Options {
 	}
 }
 
-func New(storage Storage, handler xp.Handler, opts Options) *Consumer {
+func New(storage Storage, handler handler.Handler, opts Options) *Consumer {
 	return &Consumer{
 		storage:        storage,
 		handler:        handler,

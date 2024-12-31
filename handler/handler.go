@@ -1,4 +1,4 @@
-package xp
+package handler
 
 import (
 	"context"
@@ -13,10 +13,10 @@ type Handler interface {
 	Handle(ctx context.Context, partitionKey string, window iter.Seq[partition.Record]) error
 }
 
-// HandlerFunc is a function type that implements Handler.
-type HandlerFunc func(ctx context.Context, partitionKey string, window iter.Seq[partition.Record]) error
+// Func is a function type that implements Handler.
+type Func func(ctx context.Context, partitionKey string, window iter.Seq[partition.Record]) error
 
 // Handle calls the function.
-func (f HandlerFunc) Handle(ctx context.Context, partitionKey string, window iter.Seq[partition.Record]) error {
+func (f Func) Handle(ctx context.Context, partitionKey string, window iter.Seq[partition.Record]) error {
 	return f(ctx, partitionKey, window)
 }
