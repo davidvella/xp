@@ -7,11 +7,17 @@ help:  ## Display this help.
 tools: ## Installs required binaries locally
 	go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
 	go install github.com/actgardner/gogen-avro/v10/cmd/...@latest
+	go install github.com/jstemmer/go-junit-report@latest
 
 ##@ Tests
 test: ## Run unit tests
 	@echo "== unit test"
 	go test -cover -v ./...
+
+##@ Tests
+test-ci: tools ## Run unit tests
+	@echo "== unit test"
+	go test -cover 2>&1 ./... | go-junit-report -set-exit-code > junit.xml
 
 ##@ Run static checks
 check: tools ## Runs lint, fmt and vet checks against the codebase

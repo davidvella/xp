@@ -17,7 +17,7 @@ jobs:
           go-version: stable
 
       - name: Test
-        run: make test
+        run: make test-ci
 
       - name: Test
         run: make coverage
@@ -29,3 +29,9 @@ jobs:
           files: ./cover.out
           flags: unittests
           verbose: true
+
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
