@@ -21,11 +21,15 @@ func ExampleProcessor() {
 		fmt.Printf("Failed to create temp dir: %v\n", err)
 		return
 	}
+	defer os.Remove(pendingDir)
+
 	publishedDir, err := os.MkdirTemp("", "published-*")
 	if err != nil {
 		fmt.Printf("Failed to create temp dir: %v\n", err)
 		return
 	}
+	defer os.Remove(publishedDir)
+
 	// Create storages
 	storage := local.NewLocalStorage(pendingDir, publishedDir)
 
