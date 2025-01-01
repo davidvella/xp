@@ -438,3 +438,36 @@ func BenchmarkIndividualWrites(b *testing.B) {
 		})
 	}
 }
+
+func FuzzTableOperations(f *testing.F) {
+	f.Add("key1", []byte("value1"))
+	f.Add("", []byte{})
+	f.Add("key-with-special-chars!@#", []byte("value"))
+
+	f.Fuzz(func(t *testing.T, key string, data []byte) {
+		record := partition.RecordImpl{
+			ID:           key,
+			PartitionKey: "test-partition",
+			Timestamp:    time.Now(),
+			Data:         data,
+		}
+
+		writer, path, cleanup := setupWriter(t)
+		defer cleanup()
+
+		err := writer.Write(&record)
+		if err != nil {
+			// Some inputs should fail validation
+			return
+		}
+
+		require.NoError(t, writer.Close())
+
+		reader, cleanupReader := setupReader(t, path)
+		defer cleanupReader()
+
+		got, err := reader.Get(key)
+		require.NoError(t, err)
+		assert.Equal(t, got.GetData(), data)
+	})
+}
