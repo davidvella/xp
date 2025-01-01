@@ -432,3 +432,44 @@ func incrementString(s string) string {
 		return r
 	}, s)
 }
+
+func FuzzWALOperations(f *testing.F) {
+	f.Add([]byte("test-data"), int(1))
+	f.Add([]byte{}, int(0))
+
+	f.Fuzz(func(t *testing.T, data []byte, maxRecs int) {
+		tmpFile := createTempFile(t)
+		defer os.Remove(tmpFile.Name())
+
+		writer, err := wal.NewWriter(tmpFile, maxRecs)
+		if err != nil {
+			return
+		}
+
+		record := partition.RecordImpl{
+			ID:           "test-id",
+			PartitionKey: "test-partition",
+			Timestamp:    time.Now(),
+			Data:         data,
+		}
+
+		if err := writer.Write(&record); err != nil {
+			return
+		}
+
+		require.NoError(t, writer.Close())
+
+		f, err := os.Open(tmpFile.Name())
+		require.NoError(t, err)
+		defer f.Close()
+
+		reader := wal.NewReader(f)
+		var readRecords []partition.Record
+		for record := range reader.All() {
+			readRecords = append(readRecords, record)
+		}
+
+		assert.Equal(t, 1, len(readRecords))
+		assert.Equal(t, data, readRecords[0].GetData())
+	})
+}

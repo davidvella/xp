@@ -434,3 +434,32 @@ func TestSize(t *testing.T) {
 		})
 	}
 }
+
+func FuzzRecordIO(f *testing.F) {
+	f.Add("id1", "partition1", []byte("data1"))
+	f.Add("", "", []byte{})
+
+	f.Fuzz(func(t *testing.T, id string, partitionKey string, data []byte) {
+		record := &partition.RecordImpl{
+			ID:           id,
+			PartitionKey: partitionKey,
+			Timestamp:    time.Now(),
+			Data:         data,
+		}
+
+		buf := new(bytes.Buffer)
+		_, err := recordio.Write(buf, record)
+		if err != nil {
+			return
+		}
+
+		readRecord, err := recordio.ReadRecord(bytes.NewReader(buf.Bytes()))
+		if err != nil {
+			return
+		}
+
+		assert.Equal(t, record.GetID(), readRecord.GetID())
+		assert.Equal(t, record.GetData(), readRecord.GetData())
+		assert.Equal(t, record.GetPartitionKey(), readRecord.GetPartitionKey())
+	})
+}
